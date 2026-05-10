@@ -1,0 +1,20 @@
+B101,Object Oriented Programming,Book,True
+B102,Data Structures and Algorithms,Book,False
+B103,Database Systems,Book,True
+B104,Operating Systems,Book,True
+B105,Computer Networks,Book,False
+B106,Software Engineering,Book,True
+B107,Discrete Mathematics,Book,True
+B108,Artificial Intelligence,Book,True
+B109,Digital Logic Design,Book,False
+B110,Theory of Automata,Book,True
+E201,Java Programming Guide,EBook,True
+E202,Python for Beginners,EBook,True
+E203,Cloud Computing Essentials,EBook,False
+E204,Cyber Security Basics,EBook,True
+E205,Machine Learning Concepts,EBook,True
+J301,IEEE Research Journal,Journal,True
+J302,ACM Computing Survey,Journal,False
+J303,NIT Tech Magazine,Journal,True
+J304,Advanced Computing Journal,Journal,True
+J305,Software Trends Review,Journal,False
