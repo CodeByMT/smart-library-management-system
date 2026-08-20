@@ -141,12 +141,38 @@ public class LibraryService {
         }
     }
 
+    public void viewUsers() {
+        if (users.isEmpty()) {
+            System.out.println("No users are registered yet.");
+            return;
+        }
+
+        System.out.println("\nRegistered users:");
+        for (User user : users) {
+            user.displayInfo();
+        }
+    }
+
     public void searchItemById(String id) {
         LibraryItem item = SearchUtil.searchByID(items, id);
         if (item == null) {
             System.out.println("No item found with ID " + id);
         } else {
             item.displayInfo();
+        }
+    }
+
+    public void searchUserById(String userID) {
+        if (userID == null || userID.trim().isEmpty()) {
+            System.out.println("Please provide a non-empty user ID.");
+            return;
+        }
+
+        User user = findUserById(userID);
+        if (user == null) {
+            System.out.println("No user found with ID " + userID);
+        } else {
+            user.displayInfo();
         }
     }
 
@@ -323,6 +349,11 @@ public class LibraryService {
      * @throws InvalidUserException if the user ID is not found
      * @throws ItemNotAvailableException if the item ID is not found
      */
+    /**
+     * Creates a reservation in memory for the current session only.
+     * Reservation state is intentionally not persisted to CSV and is cleared when the
+     * application loads fresh data through a new LibraryService instance.
+     */
     public void reserveItem(String userID, String itemID) throws InvalidUserException, ItemNotAvailableException {
         InputValidator.validateNonEmpty(userID, "User ID");
         InputValidator.validateNonEmpty(itemID, "Item ID");
@@ -358,6 +389,8 @@ public class LibraryService {
         long availableItems = items.stream().filter(LibraryItem::isAvailable).count();
         long issuedItems = totalItems - availableItems;
 
+        // The most-borrowed report intentionally uses the historical issue count.
+        // This is not the number of items currently checked out; availability is tracked separately.
         LibraryItem mostBorrowed = null;
         for (LibraryItem item : items) {
             if (mostBorrowed == null || item.getBorrowCount() > mostBorrowed.getBorrowCount()) {
@@ -498,6 +531,11 @@ public class LibraryService {
         return null;
     }
 
+    /**
+     * Reconstructs each item's historical issue count from the transaction history.
+     * This deliberately counts successful issue events, not currently active borrows.
+     * Active availability is derived separately from item availability and return state.
+     */
     private void rebuildBorrowCountsFromTransactions() {
         for (LibraryItem item : items) {
             item.resetBorrowCount();

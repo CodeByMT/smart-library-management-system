@@ -23,7 +23,7 @@ public class Main {
 
         while (running) {
             printMenu();
-            int choice = readInteger(scanner, "Enter your choice: ");
+            int choice = readValidMenuChoice(scanner);
 
             switch (choice) {
                 case 1:
@@ -33,40 +33,48 @@ public class Main {
                     addUser(scanner, libraryService);
                     break;
                 case 3:
+                    System.out.println("\nListing all items:");
                     libraryService.viewItems();
                     break;
                 case 4:
-                    searchItem(scanner, libraryService);
+                    libraryService.viewUsers();
                     break;
                 case 5:
-                    issueItem(scanner, libraryService);
+                    searchItem(scanner, libraryService);
                     break;
                 case 6:
-                    returnItem(scanner, libraryService);
+                    searchUser(scanner, libraryService);
                     break;
                 case 7:
-                    reserveItem(scanner, libraryService);
+                    issueItem(scanner, libraryService);
                     break;
                 case 8:
+                    returnItem(scanner, libraryService);
+                    break;
+                case 9:
+                    reserveItem(scanner, libraryService);
+                    break;
+                case 10:
+                    System.out.println("\nSorting items by title...");
                     libraryService.sortItems();
                     libraryService.viewItems();
                     break;
-                case 9:
+                case 11:
                     libraryService.showReports();
                     break;
-                case 10:
+                case 12:
                     libraryService.undoLastTransaction();
                     break;
-                case 11:
+                case 13:
                     libraryService.saveData();
                     break;
-                case 12:
+                case 14:
                     libraryService.saveData();
                     running = false;
                     System.out.println("Exiting the system. Goodbye!");
                     break;
                 default:
-                    System.out.println("Please enter a valid menu option.");
+                    System.out.println("Please enter a valid menu option from 1 to 14.");
                     break;
             }
         }
@@ -82,15 +90,17 @@ public class Main {
         System.out.println("1. Add Item");
         System.out.println("2. Add User");
         System.out.println("3. View Items");
-        System.out.println("4. Search Item");
-        System.out.println("5. Issue Item");
-        System.out.println("6. Return Item");
-        System.out.println("7. Reserve Item");
-        System.out.println("8. Sort Items");
-        System.out.println("9. Show Reports");
-        System.out.println("10. Undo Last Action");
-        System.out.println("11. Save Data");
-        System.out.println("12. Exit");
+        System.out.println("4. View Users");
+        System.out.println("5. Search Item");
+        System.out.println("6. Search User");
+        System.out.println("7. Issue Item");
+        System.out.println("8. Return Item");
+        System.out.println("9. Reserve Item");
+        System.out.println("10. Sort Items");
+        System.out.println("11. Show Reports");
+        System.out.println("12. Undo Last Action");
+        System.out.println("13. Save Data");
+        System.out.println("14. Exit");
         System.out.println("************************************");
     }
 
@@ -102,6 +112,16 @@ public class Main {
             } catch (NumberFormatException ex) {
                 System.out.println("Please enter a valid integer.");
             }
+        }
+    }
+
+    private static int readValidMenuChoice(Scanner scanner) {
+        while (true) {
+            int choice = readInteger(scanner, "Enter your choice: ");
+            if (choice >= 1 && choice <= 14) {
+                return choice;
+            }
+            System.out.println("Please choose a valid menu option from 1 to 14.");
         }
     }
 
@@ -122,8 +142,13 @@ public class Main {
             if (!input.isEmpty()) {
                 return input;
             }
-            System.out.println("Input cannot be empty.");
+            System.out.println("Input cannot be empty. Please try again.");
         }
+    }
+
+    private static String readOptionalString(Scanner scanner, String prompt) {
+        System.out.print(prompt);
+        return scanner.nextLine().trim();
     }
 
     private static String getDataDirectory() {
@@ -148,9 +173,10 @@ public class Main {
     private static void addUser(Scanner scanner, LibraryService libraryService) {
         String userID = readNonEmptyString(scanner, "Enter user ID: ");
         String name = readNonEmptyString(scanner, "Enter user name: ");
+        String email = readOptionalString(scanner, "Enter email (optional, leave blank to skip): ");
 
         try {
-            libraryService.addUser(userID, name);
+            libraryService.addUser(userID, name, email);
         } catch (IllegalArgumentException ex) {
             System.out.println("Error: " + ex.getMessage());
         }
@@ -158,16 +184,24 @@ public class Main {
 
     private static void searchItem(Scanner scanner, LibraryService libraryService) {
         System.out.println("Search by: 1) ID  2) Title");
-        int option = readInteger(scanner, "Enter option: ");
-        if (option == 1) {
-            String itemID = readNonEmptyString(scanner, "Enter item ID: ");
-            libraryService.searchItemById(itemID);
-        } else if (option == 2) {
-            String keyword = readNonEmptyString(scanner, "Enter title keyword: ");
-            libraryService.searchItemsByTitle(keyword);
-        } else {
-            System.out.println("Please choose one of the given options.");
+        while (true) {
+            int option = readInteger(scanner, "Enter option: ");
+            if (option == 1) {
+                String itemID = readNonEmptyString(scanner, "Enter item ID: ");
+                libraryService.searchItemById(itemID);
+                return;
+            } else if (option == 2) {
+                String keyword = readNonEmptyString(scanner, "Enter title keyword: ");
+                libraryService.searchItemsByTitle(keyword);
+                return;
+            }
+            System.out.println("Please choose 1 for ID search or 2 for title search.");
         }
+    }
+
+    private static void searchUser(Scanner scanner, LibraryService libraryService) {
+        String userID = readNonEmptyString(scanner, "Enter user ID to search: ");
+        libraryService.searchUserById(userID);
     }
 
     private static void issueItem(Scanner scanner, LibraryService libraryService) {
@@ -196,6 +230,11 @@ public class Main {
         }
     }
 
+    /**
+     * Reservation queues are in-memory session state only.
+     * They are intentionally not saved to CSV and are cleared when a new LibraryService
+     * loads data from disk for a fresh application session.
+     */
     private static void reserveItem(Scanner scanner, LibraryService libraryService) {
         String userID = readNonEmptyString(scanner, "Enter user ID: ");
         String itemID = readNonEmptyString(scanner, "Enter item ID: ");

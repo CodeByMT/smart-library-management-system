@@ -1,523 +1,162 @@
-# Architecture & Design Documentation
+# Architecture and design notes
 
-## Overview
+This project is a simple Java CLI application with a small layered design. It is not a full enterprise architecture and does not use frameworks, a database, or a GUI.
 
-This document describes the architectural decisions, design patterns, and software engineering principles applied to the Smart Library Management System.
+## Current structure
 
----
+The implementation is organized as follows:
 
-## System Architecture
+- Main.java acts as the presentation layer and CLI entry point.
+- LibraryService acts as the central service layer and holds the business logic for users, items, transactions, reports, and undo.
+- FileManager handles CSV file creation, loading, and saving.
+- Model classes represent domain objects and hold item/user state.
+- Interfaces define behavior contracts such as Borrowable and FineCalculationStrategy.
+- Exceptions represent validation and business errors.
+- Utility classes handle input validation, searching, and sorting.
+- LibrarySystemTestSuite provides the project’s full regression suite.
 
-### Layered Architecture Pattern
+## Layered design
 
-The system follows a classic three-layer architecture:
+The project uses a basic three-part structure:
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                 Presentation Layer (CLI)                │
-│                    (Main.java)                          │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────┐
-│              Service/Business Logic Layer                │
-│        (LibraryService, FileManager)                    │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────┐
-│              Domain Model Layer                          │
-│  (LibraryItem, User, Transaction, etc.)                │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-┌─────────────────────▼───────────────────────────────────┐
-│         Persistence & Infrastructure Layer               │
-│    (CSV files, FileManager utilities)                  │
-└─────────────────────────────────────────────────────────┘
+```text
+CLI / presentation
+    Main.java
+        |
+        v
+Business logic
+    LibraryService
+        |
+        v
+Models and persistence
+    LibraryItem, User, Transaction, FileManager
 ```
 
-### Benefits of This Architecture
-
-✅ **Separation of Concerns**: Each layer has distinct responsibility
-✅ **Testability**: Layers can be tested independently
-✅ **Maintainability**: Changes to one layer don't affect others
-✅ **Reusability**: Domain models can be reused in different UIs
-✅ **Scalability**: Easy to add new presentation layers (Web, Mobile)
+This is a lightweight service-oriented design suited to a course project, not a formal Clean Architecture setup.
 
----
+## Main responsibilities
 
-## Design Patterns Implemented
+### Main.java
 
-### 1. Strategy Pattern - Fine Calculation
+Main.java is the interactive menu-driven interface. It reads user input, calls LibraryService methods, and handles CLI flow.
 
-**Problem**: Different item types have different fine calculation rules
+### LibraryService
 
-**Solution**: `FineCalculationStrategy` interface with polymorphic implementations
+LibraryService is the main coordination point for:
 
-```
-FineCalculationStrategy (interface)
-  │
-  ├─► Book Strategy: Rs 50/day after 2-day grace period
-  ├─► EBook Strategy: Rs 0 (no fines)
-  └─► Journal Strategy: Rs 80/day after 2-day grace period
-```
-
-**Benefits**:
-- Easy to add new fine rules without modifying existing code (Open/Closed Principle)
-- Each item type encapsulates its own fine logic
-- Follows Single Responsibility Principle
+- adding users and items
+- searching and sorting
+- issuing and returning items
+- managing reservations
+- creating and replaying transaction records
+- undoing transactions
+- generating basic reports
+- writing data to CSV
 
-**Usage**:
-```java
-LibraryItem item = new Book(...);
-double fine = item.calculateFine(5);  // Calls Book's strategy
-```
+### FileManager
 
-### 2. Service/Facade Pattern - LibraryService
+FileManager is responsible for:
 
-**Problem**: Complex business logic spread across multiple operations
+- ensuring the required CSV files exist
+- loading data from data/books.csv, data/users.csv, and data/transactions.csv
+- saving updated data back to disk
+- parsing quoted CSV fields in the supported format
+- skipping malformed rows safely instead of crashing
 
-**Solution**: `LibraryService` acts as single entry point for all operations
+### Models
 
-```
-Main.java
-   │
-   ├─ addItem() ──┐
-   ├─ issueItem()─┼──► LibraryService (Facade)
-   ├─ returnItem()┤
-   └─ reserveItem┴──► Coordinates:
-                    ├─ Models (LibraryItem, User, Transaction)
-                    ├─ Persistence (FileManager)
-                    ├─ Utils (InputValidator, SearchUtil, SortUtil)
-```
+The model layer contains the domain objects:
 
-**Benefits**:
-- Simplifies client code (Main.java)
-- Centralizes complex business logic
-- Easy to understand system behavior
-- Single point for transaction management
+- LibraryItem is the abstract base item type
+- Book, EBook, and Journal extend LibraryItem
+- User represents a library member
+- Transaction stores issue/return audit information
+- UndoRecord captures the last action for rollback
+- TransactionAction is the enum for undo actions
+- Person is the base class for User
 
-### 3. Type-Safe Enum Pattern
+### Interfaces
 
-**Problem**: Magic strings like "ISSUE", "RETURN" are error-prone
+The interfaces in the project are intentionally small and specific:
 
-**Solution**: Type-safe enums replacing strings
+- Borrowable: common borrowing behavior
+- FineCalculationStrategy: fine calculation behavior for each item type
 
-```java
-// Before (error-prone)
-undoStack.push(new UndoRecord("ISSUE", ...));
-String action = "ISUE";  // ❌ Typo not caught at compile time
+### Exceptions
 
-// After (type-safe)
-undoStack.push(new UndoRecord(TransactionAction.ISSUE, ...));
-TransactionAction action = TransactionAction.ISSUE;  // ✅ Compile-time check
-```
+The project uses custom exceptions for invalid or unavailable operations:
 
-**Enums Used**:
-- `TransactionAction`: ISSUE, RETURN, RESERVE
+- InvalidUserException
+- ItemNotAvailableException
+- OverdueException
 
-**Benefits**:
-- Compile-time type safety
-- Auto-completion in IDEs
-- Self-documenting code
-- Easier refactoring
+### Utilities
 
-### 4. Data Transfer Object (DTO) Pattern
+The utility layer contains:
 
-**Problem**: Undo operations need to capture complex state
+- InputValidator for validation rules
+- SearchUtil for ID/title search
+- SortUtil for simple bubble sorting
 
-**Solution**: `UndoRecord` encapsulates undo information
+### Tests
 
-```java
-public class UndoRecord {
-    private final TransactionAction action;      // Type-safe
-    private final Transaction transaction;       // Full audit trail
-    private final String itemId;                 // Affected entities
-    private final String userId;
-    private final boolean reservationRemoved;    // State flags
-}
-```
+The project includes a custom console-based suite in LibrarySystemTestSuite. It verifies the functional behavior of the library without using JUnit or a framework.
 
-**Benefits**:
-- Strongly-typed instead of loose parameters
-- Self-documenting intent
-- Easier to extend (add new undo types)
+## State semantics in the current implementation
 
-### 5. Validation Strategy Pattern
+Several state rules are important and reflected in the source:
 
-**Problem**: Input validation scattered across multiple methods
+- available indicates the current readiness of the item for borrowing
+- borrowCount stores the total historical issue count for an item
+- reservationQueue is an in-memory FIFO queue for the current session
+- transactions store the persisted history of issue and return activity
 
-**Solution**: Centralized `InputValidator` utility class
+Reservation state is session-only by design. It is not written to CSV and is cleared when a fresh LibraryService instance loads data.
 
-```java
-// Usage
-InputValidator.validateNonEmpty(userID, "User ID");
-InputValidator.validatePositive(issueDay, "Issue day");
-InputValidator.validateDaySequence(returnDay, issueDay, "Return", "Issue");
-```
-
-**Benefits**:
-- DRY (Don't Repeat Yourself)
-- Single source of truth for validation rules
-- Consistent error messages
-- Easy to enhance validation logic
-
----
-
-## SOLID Principles Application
-
-### S - Single Responsibility Principle
-
-Each class has one reason to change:
-
-| Class | Responsibility |
-|-------|-----------------|
-| `LibraryItem` | Represent a borrowable item |
-| `LibraryService` | Orchestrate business operations |
-| `FileManager` | Persist data to disk |
-| `InputValidator` | Validate user input |
-| `SearchUtil` | Search functionality |
-
-### O - Open/Closed Principle
-
-System is open for extension, closed for modification:
-
-```java
-// Want to add new item type? Just extend LibraryItem
-public class Newspaper extends LibraryItem {
-    @Override
-    public double calculateFine(int daysLate) {
-        return 0;  // Newspapers have no fines
-    }
-}
-// No modification needed to existing code!
-```
-
-### L - Liskov Substitution Principle
-
-Subtypes are substitutable for base types:
-
-```java
-LibraryItem item1 = new Book(...);
-LibraryItem item2 = new EBook(...);
-LibraryItem item3 = new Journal(...);
-
-// All work identically through LibraryItem interface
-issueItem(item1);  // Works for all subtypes
-item1.calculateFine(5);  // Polymorphic behavior
-```
-
-### I - Interface Segregation Principle
-
-Focused, client-specific interfaces:
-
-```java
-// Specific to borrowable behavior
-public interface Borrowable {
-    void issueItem(User user);
-    void returnItem(User user);
-}
-
-// Specific to fine calculation strategy
-public interface FineCalculationStrategy {
-    double calculateFine(int daysLate);
-    String getDescription();
-}
-```
-
-### D - Dependency Inversion Principle
-
-Depend on abstractions, not concrete classes:
-
-```java
-// ❌ Wrong - depends on concrete Book class
-LibraryService(ArrayList<Book> books) { ... }
-
-// ✅ Correct - depends on abstract LibraryItem
-LibraryService(ArrayList<LibraryItem> items) { ... }
-```
-
----
-
-## Class Hierarchy Diagram
-
-```
-                    Borrowable (Interface)
-                         ▲
-                         │
-                    LibraryItem (Abstract)
-                    ├─ itemID: String
-                    ├─ title: String
-                    ├─ author: String
-                    ├─ available: boolean
-                    ├─ reservationQueue: Queue<String>
-                    ├─ borrowCount: int
-                    │
-                    ├─ calculateFine(int): double ◄──── FineCalculationStrategy
-                    ├─ issueItem(User)
-                    ├─ returnItem(User)
-                    └─ reserveItem(String)
-                         ▲
-                ┌────────┼────────┐
-                │        │        │
-            Book      EBook     Journal
-            ├─ Fine: Rs 50/day  ├─ Fine: Rs 0  ├─ Fine: Rs 80/day
-            │   after 2 days    │ (no fines)   │   after 2 days
-            └─ Represents       └─ Digital     └─ Academic
-               physical books      content       publications
-
-
-                        Person (Abstract)
-                        ├─ id: String
-                        └─ name: String
-                             ▲
-                             │
-                           User
-                           ├─ borrowedItems: List<LibraryItem>
-                           ├─ email: String
-                           ├─ maxBorrowLimit: int
-                           └─ borrowItem(LibraryItem)
-
-
-                    LibraryService (Facade)
-                    ├─ items: List<LibraryItem>
-                    ├─ users: List<User>
-                    ├─ transactions: List<Transaction>
-                    ├─ undoStack: Deque<UndoRecord>
-                    │
-                    ├─ issueItem(String, String, int)
-                    ├─ returnItem(String, String, int)
-                    ├─ reserveItem(String, String)
-                    └─ undoLastTransaction()
-```
-
----
-
-## Data Flow Diagram
-
-### Issue Item Operation Flow
-
-```
-User Input (Main.java)
-    │
-    ▼
-LibraryService.issueItem(userID, itemID, issueDay)
-    │
-    ├─► Validate inputs (InputValidator)
-    ├─► Find user (linear search)
-    ├─► Find item (linear search)
-    ├─► Check item availability
-    ├─► Check user borrow limit
-    ├─► Handle reservations (remove from queue if applicable)
-    │
-    ├─► Execute operation
-    │   ├─► item.issueItem(user)  ◄─── Updates item state
-    │   ├─► user.borrowItem(item) ◄─── Updates user's borrowed list
-    │
-    ├─► Create Transaction record (audit trail)
-    ├─► Push UndoRecord to stack (for undo functionality)
-    │
-    └─► Persist to disk (FileManager)
-        └─► Save transactions.csv
-```
-
-### State Machine - Item Availability
-
-```
-              ┌─────────────┐
-              │  AVAILABLE  │
-              └──────┬──────┘
-                     │
-        Issue / Reserve
-                     │
-                     ▼
-              ┌─────────────┐
-         ┌────┤  BORROWED   │◄────┐
-         │    └──────┬──────┘     │
-         │           │           │
-      Undo        Return         │
-         │           │           │
-         │           ▼           │
-         │    ┌─────────────┐    │
-         └───►│ AVAILABLE   │────┘
-              └─────────────┘
-```
-
----
-
-## Transaction Processing & Audit Trail
-
-### Transaction Record
-
-```java
-Transaction
-├─ transactionID: String     // Unique identifier (T001, T002, ...)
-├─ userID: String            // Who borrowed it
-├─ itemID: String            // What was borrowed
-├─ issueDay: int             // When issued
-├─ dueDay: int               // When due (issueDay + 7)
-├─ returnDay: int            // When returned (0 if not returned)
-└─ fine: double              // Fine if overdue
-```
-
-### Undo Record
-
-```java
-UndoRecord
-├─ action: TransactionAction // Type of action (ISSUE, RETURN, RESERVE)
-├─ transaction: Transaction  // Full transaction details
-├─ itemId: String            // Affected item
-├─ userId: String            // Affected user
-└─ reservationRemoved: bool  // Whether reservation was removed
-```
-
-**Benefits of Audit Trail**:
-- Complete history of all operations
-- Ability to undo/rollback
-- Debugging and verification
-- Regulatory compliance (if needed)
-
----
-
-## Error Handling Strategy
-
-### Exception Hierarchy
-
-```
-Exception
-│
-├─► InvalidUserException
-│   └─ Thrown when: User ID not found or invalid
-│   └─ Caught by: Main.java, LibraryService callers
-│   └─ Example: "User ID not found: U999"
-│
-├─► ItemNotAvailableException
-│   └─ Thrown when: Item not found or not available
-│   └─ Caught by: Main.java, LibraryService callers
-│   └─ Example: "Item is currently issued to another user"
-│
-└─► OverdueException
-    └─ Thrown when: Item returned late (but operation succeeds)
-    └─ Caught by: Main.java specifically
-    └─ Example: "Overdue by 2 days. Fine to pay: Rs 100"
-```
-
-### Exception Handling Pattern
-
-```java
-try {
-    libraryService.issueItem(userID, itemID, issueDay);
-} catch (InvalidUserException | ItemNotAvailableException ex) {
-    // User/item validation failed
-    System.out.println("Error: " + ex.getMessage());
-} catch (OverdueException ex) {
-    // Special case: operation succeeded but with penalty
-    System.out.println("Return complete with overdue fine. " + ex.getMessage());
-}
-```
-
----
-
-## Performance Considerations
-
-### Current Implementation
-
-| Operation | Complexity | Justification |
-|-----------|-----------|---------------|
-| Find item by ID | O(n) | Linear search through items |
-| Find user by ID | O(n) | Linear search through users |
-| Search items by title | O(n) | Must check all items |
-| Reserve item | O(n) | Queue operations are O(1), but checking membership is O(n) |
-| Issue item | O(n) | All above operations |
-| Sort items | O(n²) | Bubble sort (simple, clear implementation) |
-
-### Future Optimization Opportunities
-
-- Use HashMap for O(1) ID lookups
-- Implement binary search for sorted data
-- Use more efficient sorting (QuickSort, MergeSort)
-- Implement indexing on frequently searched fields
-- Consider database for large datasets
-
----
-
-## Security Considerations
-
-### Current Safeguards
-
-✅ Input validation at service layer
-✅ Type-safe enums prevent value errors
-✅ Exception handling for error cases
-✅ Transaction audit trail for accountability
-
-### Potential Future Enhancements
-
-- [ ] Role-based access control (Admin/User)
-- [ ] Password protection for user accounts
-- [ ] Encrypted data storage
-- [ ] Input sanitization for CSV special characters
-- [ ] Rate limiting on operations
-- [ ] Logging of suspicious activities
-
----
-
-## Extensibility Points
-
-### Easy to Extend
-
-✅ **New Item Types**: Extend `LibraryItem` with new subclass
-✅ **New Fine Rules**: Implement new `FineCalculationStrategy`
-✅ **New Operations**: Add methods to `LibraryService`
-✅ **New Search Criteria**: Add methods to `SearchUtil`
-✅ **New Validation Rules**: Add methods to `InputValidator`
-
-### Example: Adding a Magazine Item Type
-
-```java
-public class Magazine extends LibraryItem {
-    private int issueNumber;
-    
-    public Magazine(String itemID, String title, String author, int issueNumber) {
-        super(itemID, title, author, true);
-        this.issueNumber = issueNumber;
-    }
-    
-    @Override
-    public double calculateFine(int daysLate) {
-        if (daysLate <= 7) return 0;  // 1-week grace period
-        return (daysLate - 7) * 25;   // Rs 25/day after grace period
-    }
-    
-    @Override
-    public String getType() {
-        return "Magazine";
-    }
-}
-
-// Usage: Just add to switch statement in addItemWithDetails()
-case "magazine":
-    item = new Magazine(itemID, title, author, issueNumber);
-    break;
-```
-
----
-
-## Testing Strategy
-
-### Unit Testing Scope
-
-```
-LibraryService
-├─ issueItem()
-│  ├─ Valid issue with available item
-│  ├─ Invalid user ID
-│  ├─ Invalid item ID
-│  ├─ Item already issued
-│  ├─ User at borrow limit
-│  └─ Reservation handling
-│
-├─ returnItem()
-│  ├─ Valid return
-│  ├─ Calculate fines correctly
-│  ├─ Invalid user/item
+## Design patterns actually supported by the code
+
+The following patterns are genuinely present in the implementation:
+
+### Strategy pattern
+
+Fine calculation is delegated through the FineCalculationStrategy interface. Each item subclass implements the calculation differently.
+
+### Enum-based action tracking
+
+TransactionAction is used to represent issue, return, and reserve actions in a type-safe way.
+
+### Simple service layer
+
+LibraryService centralizes business logic and keeps most operations out of the CLI and model classes.
+
+### Queue-based reservation handling
+
+LibraryItem keeps a Queue<String> reservationQueue for runtime reservation ordering.
+
+### Undo tracking
+
+UndoRecord and a Deque/ArrayDeque-based undo stack are used to reverse recent transaction actions.
+
+## What is not claimed here
+
+This document does not describe the project as fully enterprise-level or as a formal Clean Architecture implementation. The project is a Java student OOP library system with command-line interaction and CSV persistence.
+
+## Example flow
+
+The basic flow is:
+
+1. Main collects input.
+2. LibraryService validates and processes the operation.
+3. Model objects are updated in memory.
+4. Transaction history and item state are kept consistent.
+5. FileManager saves CSV data when needed.
+6. Undo records can reverse the last action.
+
+## Notes
+
+- The project keeps logic simple and local to the course scope.
+- The user and item state is intentionally straightforward and not built around a database or framework.
+- CSV parsing supports quoted values but not multiline CSV records.
 │  └─ Return before issue date
 │
 ├─ reserveItem()

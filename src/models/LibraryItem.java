@@ -18,7 +18,17 @@ public abstract class LibraryItem implements Borrowable {
     protected String title;
     protected String author;
     protected boolean available;
+    /**
+     * Runtime-only reservation queue for the current application session.
+     * This queue is intentionally not persisted to CSV and is cleared when a new
+     * LibraryService instance loads the application data.
+     */
     protected Queue<String> reservationQueue;
+    /**
+     * Historical number of successful issue events for this item.
+     * This is not the current active borrow count; availability and transaction return state
+     * determine whether the item is currently on loan.
+     */
     protected int borrowCount;
 
     public LibraryItem(String itemID, String title, String author, boolean available) {
@@ -39,14 +49,20 @@ public abstract class LibraryItem implements Borrowable {
     @Override
     public void issueItem(User user) {
         this.available = false;
+        // Each successful issue increases the historical issue count for the item.
         borrowCount++;
     }
 
     @Override
     public void returnItem(User user) {
+        // Normal return changes current availability only; it does not alter historical issue count.
         this.available = true;
     }
 
+    /**
+     * Adds a user to the in-memory reservation queue for this session only.
+     * Reservations are not saved to CSV and are intentionally not restored on restart.
+     */
     public boolean reserveItem(String userId) {
         if (userId == null || userId.trim().isEmpty()) {
             return false;
@@ -122,10 +138,18 @@ public abstract class LibraryItem implements Borrowable {
         return borrowCount;
     }
 
+    /**
+     * Adds one to the historical issue count for this item.
+     * Used when reconstructing state from transaction history.
+     */
     public void incrementBorrowCount() {
         this.borrowCount++;
     }
 
+    /**
+     * Reverses a previously successful issue event during undo.
+     * This decreases the historical issue count, while availability is restored separately.
+     */
     public void decrementBorrowCount() {
         if (this.borrowCount > 0) {
             this.borrowCount--;

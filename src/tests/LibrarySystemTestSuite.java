@@ -10,7 +10,9 @@ import models.User;
 import services.FileManager;
 import services.LibraryService;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +23,33 @@ public class LibrarySystemTestSuite {
         System.out.println("===== SMART LIBRARY SYSTEM TESTS =====");
 
         testAddItemAndSearch();
+        testAddValidUser();
+        testDuplicateUserIdRejected();
+        testBlankUserIdRejected();
+        testOptionalValidEmail();
+        testServiceEmptyEmailAllowed();
+        testServiceInvalidEmailRejected();
+        testListUsers();
+        testSearchUserById();
+        testUserPersistence();
+        testHistoricalBorrowCountIncreasesOnIssue();
+        testHistoricalBorrowCountUnchangedOnNormalReturn();
+        testHistoricalBorrowCountUnchangedOnUndoReturn();
+        testHistoricalBorrowCountDecreasesOnUndoIssue();
+        try {
+            testHistoricalBorrowCountRebuiltFromTransactions();
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+        testMostBorrowedReportUsesHistoricalCount();
+        testReservationCanBeAdded();
+        testReservationQueueIsFifo();
+        testDuplicateReservationRejected();
+        testIssueRespectsHeadReservation();
+        testHeadReservationRemovedOnSuccessfulIssue();
+        testUndoIssueRestoresReservationAtFront();
+        testFreshLibraryServiceDoesNotReconstructReservationStateFromCsv();
+        testBooksCsvHeaderRemainsUnchanged();
         testBorrowLimit();
         testOverdueFine();
         testReserveAndUndo();
@@ -75,6 +104,556 @@ public class LibrarySystemTestSuite {
 
         if (!found) {
             System.out.println("FAIL - Item not found");
+        }
+    }
+
+    public static void testAddValidUser() {
+        System.out.println("\nTest: Add valid user");
+        LibraryService service = new LibraryService("test_data");
+        try {
+            service.addUser("U900", "Valid User", "valid@example.com");
+            System.out.println("PASS");
+        } catch (IllegalArgumentException e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testDuplicateUserIdRejected() {
+        System.out.println("\nTest: Duplicate user ID rejected");
+        LibraryService service = new LibraryService("test_data");
+        try {
+            service.addUser("U001", "Duplicate User", "dup@example.com");
+            System.out.println("FAIL");
+        } catch (IllegalArgumentException e) {
+            System.out.println("PASS");
+        }
+    }
+
+    public static void testBlankUserIdRejected() {
+        System.out.println("\nTest: Blank user ID rejected");
+        LibraryService service = new LibraryService("test_data");
+        try {
+            service.addUser("   ", "Blank User", "blank@example.com");
+            System.out.println("FAIL");
+        } catch (IllegalArgumentException e) {
+            System.out.println("PASS");
+        }
+    }
+
+    public static void testOptionalValidEmail() {
+        System.out.println("\nTest: Optional valid email accepted");
+        LibraryService service = new LibraryService("test_data");
+        try {
+            service.addUser("U901", "Email User", "email@example.com");
+            System.out.println("PASS");
+        } catch (IllegalArgumentException e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testServiceEmptyEmailAllowed() {
+        System.out.println("\nTest: Empty email allowed");
+        LibraryService service = new LibraryService("test_data");
+        try {
+            service.addUser("U902", "Empty Email User", "");
+            System.out.println("PASS");
+        } catch (IllegalArgumentException e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testServiceInvalidEmailRejected() {
+        System.out.println("\nTest: Invalid email rejected");
+        LibraryService service = new LibraryService("test_data");
+        try {
+            service.addUser("U903", "Bad Email User", "not-an-email");
+            System.out.println("FAIL");
+        } catch (IllegalArgumentException e) {
+            System.out.println("PASS");
+        }
+    }
+
+    public static void testListUsers() {
+        System.out.println("\nTest: List users");
+        LibraryService service = new LibraryService("test_data");
+        boolean hasUsers = !service.getUsers().isEmpty();
+        if (hasUsers) {
+            service.viewUsers();
+            System.out.println("PASS");
+        } else {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testSearchUserById() {
+        System.out.println("\nTest: Search user by ID");
+        LibraryService service = new LibraryService("test_data");
+        User user = service.getUsers().isEmpty() ? null : service.getUsers().get(0);
+        if (user != null) {
+            service.searchUserById(user.getId());
+            System.out.println("PASS");
+        } else {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testUserPersistence() {
+        System.out.println("\nTest: User persistence to CSV");
+        LibraryService service = new LibraryService("test_data");
+        ArrayList<User> users = new ArrayList<>();
+        users.add(new User("U920", "CSV User", "csv@example.com", 3));
+        users.add(new User("U921", "CSV Empty Email User", "", 2));
+
+        File file = new File("test_data/csv_users_phase3.csv");
+        file.getParentFile().mkdirs();
+        FileManager.saveUsers(file.getAbsolutePath(), users);
+        ArrayList<User> loaded = FileManager.loadUsers(file.getAbsolutePath());
+
+        if (loaded.size() == 2
+                && loaded.get(0).getEmail().equals("csv@example.com")
+                && loaded.get(1).getEmail().isEmpty()) {
+            System.out.println("PASS");
+        } else {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testHistoricalBorrowCountIncreasesOnIssue() {
+        System.out.println("\nTest: Historical borrowCount increases on issue");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U930", "Historical Borrow User");
+            service.addItemWithDetails("B930", "Historical Count Book", "Author", "Book");
+
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B930")) {
+                    item = libraryItem;
+                }
+            }
+
+            if (item == null) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            int before = item.getBorrowCount();
+            service.issueItem("U930", "B930", 1);
+            if (item.getBorrowCount() == before + 1) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testHistoricalBorrowCountUnchangedOnNormalReturn() {
+        System.out.println("\nTest: Historical borrowCount unchanged on normal return");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U931", "Historical Return User");
+            service.addItemWithDetails("B931", "Historical Return Book", "Author", "Book");
+            service.issueItem("U931", "B931", 1);
+
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B931")) {
+                    item = libraryItem;
+                }
+            }
+
+            if (item == null) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            int before = item.getBorrowCount();
+            service.returnItem("U931", "B931", 10);
+            if (item.getBorrowCount() == before && item.isAvailable()) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testHistoricalBorrowCountUnchangedOnUndoReturn() {
+        System.out.println("\nTest: Historical borrowCount unchanged on undo return");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U932", "Historical Undo Return User");
+            service.addItemWithDetails("B932", "Historical Undo Return Book", "Author", "Book");
+            service.issueItem("U932", "B932", 1);
+            service.returnItem("U932", "B932", 10);
+
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B932")) {
+                    item = libraryItem;
+                }
+            }
+
+            if (item == null) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            int before = item.getBorrowCount();
+            service.undoLastTransaction();
+            if (item.getBorrowCount() == before && !item.isAvailable()) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testHistoricalBorrowCountDecreasesOnUndoIssue() {
+        System.out.println("\nTest: Historical borrowCount decreases on undo issue");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U933", "Historical Undo Issue User");
+            service.addItemWithDetails("B933", "Historical Undo Issue Book", "Author", "Book");
+            service.issueItem("U933", "B933", 1);
+
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B933")) {
+                    item = libraryItem;
+                }
+            }
+
+            if (item == null) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            int before = item.getBorrowCount();
+            service.undoLastTransaction();
+            if (item.getBorrowCount() == before - 1 && item.isAvailable()) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testHistoricalBorrowCountRebuiltFromTransactions() throws Exception {
+        System.out.println("\nTest: Historical borrowCount rebuilt from transaction history");
+
+        File dir = new File("test_data/borrow_count_rebuild");
+        dir.mkdirs();
+
+        File booksFile = new File(dir, "books.csv");
+        File usersFile = new File(dir, "users.csv");
+        File transactionsFile = new File(dir, "transactions.csv");
+
+        java.nio.file.Files.writeString(booksFile.toPath(),
+                "ItemID,Title,Author,Type,Availability\nB990,History Book,Author,Book,true\n");
+        java.nio.file.Files.writeString(usersFile.toPath(),
+                "UserID,Name,Email,MaxBorrowLimit\nU990,History User,history@example.com,3\n");
+        java.nio.file.Files.writeString(transactionsFile.toPath(),
+                "TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine\n" +
+                "T001,U990,B990,1,8,5,0.0\n" +
+                "T002,U990,B990,9,16,0,0.0\n");
+
+        LibraryService service = new LibraryService(dir.getAbsolutePath());
+        LibraryItem item = service.getItems().get(0);
+        if (item.getBorrowCount() == 2 && !item.isAvailable()) {
+            System.out.println("PASS");
+        } else {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testMostBorrowedReportUsesHistoricalCount() {
+        System.out.println("\nTest: Most-borrowed report uses historical borrow count");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U934", "Report User A");
+            service.addUser("U935", "Report User B");
+            service.addItemWithDetails("B934", "Report Book One", "Author", "Book");
+            service.addItemWithDetails("B935", "Report Book Two", "Author", "Book");
+
+            service.issueItem("U934", "B934", 1);
+            service.returnItem("U934", "B934", 10);
+            service.issueItem("U935", "B934", 11);
+            service.returnItem("U935", "B934", 20);
+
+            service.issueItem("U934", "B935", 3);
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            PrintStream originalOut = System.out;
+            System.setOut(new PrintStream(output));
+            try {
+                service.showReports();
+            } finally {
+                System.setOut(originalOut);
+            }
+
+            String report = output.toString();
+            if (report.contains("Most borrowed item: Report Book One (2 times)")) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testReservationCanBeAdded() {
+        System.out.println("\nTest: Reservation can be added");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U960", "Reservation User");
+            service.addItemWithDetails("B960", "Reservation Book", "Author", "Book");
+            service.reserveItem("U960", "B960");
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B960")) {
+                    item = libraryItem;
+                }
+            }
+            if (item != null && "U960".equals(item.peekReservation())) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testReservationQueueIsFifo() {
+        System.out.println("\nTest: Reservation queue is FIFO");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U961", "First User");
+            service.addUser("U962", "Second User");
+            service.addItemWithDetails("B961", "FIFO Book", "Author", "Book");
+            service.reserveItem("U961", "B961");
+            service.reserveItem("U962", "B961");
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B961")) {
+                    item = libraryItem;
+                }
+            }
+            if (item != null && "U961".equals(item.peekReservation()) && item.getReservationList().contains("U961") && item.getReservationList().contains("U962")) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testDuplicateReservationRejected() {
+        System.out.println("\nTest: Duplicate reservation rejected");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U963", "Duplicate User");
+            service.addItemWithDetails("B963", "Duplicate Book", "Author", "Book");
+            service.reserveItem("U963", "B963");
+            service.reserveItem("U963", "B963");
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B963")) {
+                    item = libraryItem;
+                }
+            }
+            if (item != null && item.getReservationList().equals("U963")) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testIssueRespectsHeadReservation() {
+        System.out.println("\nTest: Issue respects queue head reservation");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U964", "Queue Head User");
+            service.addUser("U965", "Other User");
+            service.addItemWithDetails("B964", "Reserved Book", "Author", "Book");
+            service.reserveItem("U964", "B964");
+            service.issueItem("U965", "B964", 1);
+            System.out.println("FAIL");
+        } catch (ItemNotAvailableException e) {
+            System.out.println("PASS");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testHeadReservationRemovedOnSuccessfulIssue() {
+        System.out.println("\nTest: Head reservation removed on successful issue");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U966", "Head Reservation User");
+            service.addItemWithDetails("B966", "Queue Removal Book", "Author", "Book");
+            service.reserveItem("U966", "B966");
+            service.issueItem("U966", "B966", 1);
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B966")) {
+                    item = libraryItem;
+                }
+            }
+            if (item != null && item.peekReservation() == null && !item.isAvailable()) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testUndoIssueRestoresReservationAtFront() {
+        System.out.println("\nTest: Undo issue restores reservation at front");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("U967", "Front Restore User A");
+            service.addUser("U968", "Front Restore User B");
+            service.addItemWithDetails("B967", "Restore Queue Book", "Author", "Book");
+            service.reserveItem("U967", "B967");
+            service.reserveItem("U968", "B967");
+            service.issueItem("U967", "B967", 1);
+            service.undoLastTransaction();
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : service.getItems()) {
+                if (libraryItem.getItemID().equals("B967")) {
+                    item = libraryItem;
+                }
+            }
+            if (item != null && "U967".equals(item.peekReservation()) && item.isAvailable()) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testFreshLibraryServiceDoesNotReconstructReservationStateFromCsv() {
+        System.out.println("\nTest: Fresh LibraryService does not reconstruct reservation state from CSV");
+        File dir = null;
+        try {
+            dir = java.nio.file.Files.createTempDirectory("lib_session_restart_").toFile();
+
+            File booksFile = new File(dir, "books.csv");
+            File usersFile = new File(dir, "users.csv");
+            File transactionsFile = new File(dir, "transactions.csv");
+
+            java.nio.file.Files.writeString(booksFile.toPath(),
+                    "ItemID,Title,Author,Type,Availability\n");
+            java.nio.file.Files.writeString(usersFile.toPath(),
+                    "UserID,Name,Email,MaxBorrowLimit\n");
+            java.nio.file.Files.writeString(transactionsFile.toPath(),
+                    "TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine\n");
+
+            String uniqueUserId = "RES_USER_" + System.nanoTime();
+            String uniqueItemId = "RES_ITEM_" + System.nanoTime();
+
+            LibraryService first = new LibraryService(dir.getAbsolutePath());
+            first.addUser(uniqueUserId, "Session User");
+            first.addItemWithDetails(uniqueItemId, "Session Book", "Author", "Book");
+
+            LibraryItem item = null;
+            for (LibraryItem libraryItem : first.getItems()) {
+                if (libraryItem.getItemID().equals(uniqueItemId)) {
+                    item = libraryItem;
+                }
+            }
+
+            if (item == null) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            first.reserveItem(uniqueUserId, uniqueItemId);
+            if (item.peekReservation() == null || !uniqueUserId.equals(item.peekReservation())) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            first.saveData();
+
+            LibraryService fresh = new LibraryService(dir.getAbsolutePath());
+            if (fresh.getItems().size() != 1 || fresh.getUsers().size() != 1) {
+                System.out.println("FAIL");
+                return;
+            }
+
+            LibraryItem freshItem = fresh.getItems().get(0);
+            if (freshItem.peekReservation() == null && "None".equals(freshItem.getReservationList())
+                    && fresh.getUsers().get(0).getId().equals(uniqueUserId)) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        } finally {
+            if (dir != null && dir.exists()) {
+                File[] files = dir.listFiles();
+                if (files != null) {
+                    for (File file : files) {
+                        if (file.isDirectory()) {
+                            deleteRecursively(file);
+                        } else {
+                            file.delete();
+                        }
+                    }
+                }
+                dir.delete();
+            }
+        }
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        file.delete();
+    }
+
+    public static void testBooksCsvHeaderRemainsUnchanged() {
+        System.out.println("\nTest: books.csv schema remains unchanged");
+        try {
+            File file = new File("data/books.csv");
+            String header = java.nio.file.Files.readAllLines(file.toPath()).get(0);
+            String[] columns = header.split(",");
+            if (columns.length == 5 && columns[0].equals("ItemID") && columns[4].equals("Availability") && !header.contains("Reservation")) {
+                System.out.println("PASS");
+            } else {
+                System.out.println("FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
         }
     }
 

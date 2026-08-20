@@ -99,17 +99,6 @@ public class FileManager {
         return values.toArray(new String[0]);
     }
 
-    private static String escapeCsvField(String value) {
-        if (value == null) {
-            return "";
-        }
-        String escaped = value.replace("\"", "\"\"");
-        if (escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") || escaped.contains("\r")) {
-            return "\"" + escaped + "\"";
-        }
-        return escaped;
-    }
-
     private static String normalizeCsvField(String value) {
         if (value == null) {
             return "";

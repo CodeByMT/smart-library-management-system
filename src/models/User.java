@@ -70,6 +70,25 @@ public class User extends Person {
         return maxBorrowLimit;
     }
 
+    public void displayInfo() {
+        System.out.println("User ID: " + id
+                + " | Name: " + name
+                + " | Email: " + (email.isEmpty() ? "Not provided" : email)
+                + " | Max Borrow Limit: " + maxBorrowLimit
+                + " | Borrowed Items: " + borrowedItems.size());
+
+        if (!borrowedItems.isEmpty()) {
+            System.out.print("  Borrowed item IDs: ");
+            for (int i = 0; i < borrowedItems.size(); i++) {
+                if (i > 0) {
+                    System.out.print(", ");
+                }
+                System.out.print(borrowedItems.get(i).getItemID());
+            }
+            System.out.println();
+        }
+    }
+
     public String toCsv() {
         return String.join(",",
                 escapeCsv(id),

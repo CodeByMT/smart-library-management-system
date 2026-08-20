@@ -1,351 +1,168 @@
 # Smart Library Management System
 
-A command-line Java application for managing library operations with CSV persistence, overdue fines, reservations, transaction history, and undo capability.
+A simple Java command-line library management system built for a student OOP project. It stores data in CSV files, supports library operations such as issue, return, reservation, undo, and reporting, and keeps the code focused on the Java course scope.
 
 ## Overview
 
-This repository contains a CLI-based library management system written in Java. The system demonstrates clean architecture, object-oriented design, and separation of responsibilities across models, services, utilities, and a command-line entry point.
+This repository contains a CLI-based library system written in Java. The application is structured around a small layered design:
 
-The application stores data in CSV files under `data/` and initializes sample data automatically if they do not already exist.
+- Main.java provides the interactive menu-driven CLI
+- LibraryService contains the main business logic
+- FileManager stores and loads CSV data
+- model classes represent items, users, and transactions
+- utility classes handle validation, search, and sorting
+
+The project uses standard Java libraries only and does not introduce frameworks, a database, or a GUI.
 
 ## Features
 
+The project currently implements the following behaviors:
+
 - Add and manage Book, EBook, and Journal items
-- Register users and enforce borrow limits
-- Issue and return items with due-day tracking
-- Reserve unavailable items and honor reservation order
-- Calculate overdue fines per item type
-- Record transactions for audit and reporting
-- Undo the last transaction action
+- Register users and validate user IDs and optional email input
 - Search items by ID or title
-- Sort the catalog by title
+- Sort items by title
+- Issue items to users with due-day tracking
+- Return items and calculate overdue fines
+- Reserve unavailable items using a FIFO queue for the current session
+- Record transaction history for issue and return activity
+- Undo the most recent issue, return, or reservation action
+- Show basic reports such as total items, available items, issued items, and most-borrowed item
+- Persist users, items, and transactions to CSV files under the data folder
 
-## Tech Stack
+## Important state semantics
 
-- Java 8+ (JDK)
-- Standard Java libraries only
-- CSV file persistence
-- Command-line interface
+The current implementation intentionally uses these meanings:
 
-## Folder Structure
+- available = current item availability
+- borrowCount = historical issue count, not the current number of active loans
+- reservations = session-only in-memory state; not persisted to CSV
+- transactions = persisted issue/return history used to reconstruct active state and issue counts
 
-```
+## CSV behavior
+
+The current CSV logic is quote-aware for the supported format:
+
+- commas inside a field are supported
+- quotes inside a field are supported
+- malformed or incomplete CSV rows are skipped safely with warnings
+- multiline CSV fields are not supported
+
+Reservation information is intentionally not stored in CSV files. A fresh LibraryService instance starts with an empty reservation queue.
+
+## Tech stack
+
+- Java standard library
+- CLI application
+- CSV persistence
+- basic object-oriented domain model
+
+## Project structure
+
+```text
 SmartLibraryManagementSystem/
-├── data/                    # Runtime CSV persistence files
+├── data/                    # Runtime CSV files
 ├── src/                     # Java source code
+│   ├── exceptions/          # Custom exception classes
+│   ├── interfaces/          # Borrowable and fine strategy interfaces
 │   ├── main/                # CLI entry point
 │   ├── models/              # Domain model classes
-│   ├── services/            # Business logic and persistence
-│   ├── interfaces/          # Behavior contracts
-│   ├── exceptions/          # Custom exception types
-│   ├── utils/               # Validation and helper utilities
-│   └── tests/               # Manual test suite
-├── .env.example             # Example environment configuration
+│   ├── services/            # LibraryService and FileManager
+│   ├── tests/               # Custom full-system regression suite
+│   └── utils/               # Validation, search, and sort helpers
 ├── .gitignore               # Ignore rules for generated files
+├── ARCHITECTURE.md          # Architecture notes
+├── CONTRIBUTING.md          # Contribution guidance
 ├── LICENSE                  # MIT license
-├── README.md                # Project documentation
-├── CONTRIBUTING.md         # Contribution guidelines
-├── ARCHITECTURE.md         # Architecture notes
-└── UML_Diagrams.md          # UML diagrams and model overview
+├── README.md                # Project overview
+├── UML_Diagrams.md          # UML overview
+└── test_data/               # Generated test data directory
 ```
 
 ## Prerequisites
 
 - Java JDK 8 or later
-- Terminal or command prompt access
+- Command prompt or terminal
 
-## Build and Run
+## Build and run
 
-1. Compile the project:
+This project was verified with the current Windows PowerShell workflow:
 
-```bash
-javac -d bin -cp src src/exceptions/*.java src/interfaces/*.java src/models/*.java src/services/*.java src/utils/*.java src/main/*.java src/tests/*.java
+### Compile the project
+
+```powershell
+javac -d bin -cp src @((Get-ChildItem -Path src -Recurse -Filter *.java | ForEach-Object { $_.FullName }))
 ```
 
-2. Run the application:
+### Run the test suite
 
-```bash
+```powershell
+java -cp bin tests.LibrarySystemTestSuite
+```
+
+### Run the CLI application
+
+```powershell
 java -cp bin main.Main
 ```
 
-## Environment Variables
+## Optional environment variable
 
-This project supports one optional environment variable:
+The CLI supports an optional environment variable for the data directory:
 
-```bash
-LIBRARY_DATA_DIR=data
+```powershell
+$env:LIBRARY_DATA_DIR = "data"
 ```
 
-If not set, the application defaults to the `data/` folder.
-
-## Screenshots
-
-The application is a command-line interface. Add console screenshots or sample terminal output here for visual documentation.
+If it is not set, the application falls back to the data folder in the project root.
 
 ## Testing
 
-Compile and run the bundled test suite:
+The project uses a custom test runner, not JUnit:
 
-```bash
-javac -d bin -cp src src/tests/LibrarySystemTestSuite.java
+- [src/tests/LibrarySystemTestSuite.java](src/tests/LibrarySystemTestSuite.java)
+- It validates user creation, item operations, reservation behavior, undo behavior, CSV persistence, email validation, and regression cases.
+
+To run the suite:
+
+```powershell
 java -cp bin tests.LibrarySystemTestSuite
 ```
 
 ## Notes
 
-- `data/` is initialized automatically when missing.
-- `test_data/` is generated by tests and ignored by Git.
-- No hardcoded secrets, passwords, tokens, or API keys are included.
+- The data folder is initialized automatically if it does not exist.
+- The test_data folder is generated by tests and is ignored by Git.
+- The project does not include passwords, API keys, or external credentials.
+- Reservation state is intentionally not persisted and is cleared on a fresh service instance.
 
-## Known Limitations
+## Current limitations
 
-- Numeric day values instead of calendar dates
-- Single-user CLI only
-- Basic CSV parsing without escape handling
-- No authentication or encrypted storage
+This project is intentionally small and course-scoped. Current limitations include:
 
-## Future Improvements
+- day numbers are used instead of calendar dates
+- there is no multi-user locking or concurrency model
+- there is no database or external persistence layer
+- the CLI is single-user and menu-driven
+- reservation state is session-only by design
 
-- Add real date handling with `LocalDate`
-- Add authentication and user roles
-- Add JUnit automated tests
-- Improve CSV parsing for quoted values
-- Add logging and metrics
-- Add a web or desktop UI on top of the existing service layer
+## Potential future improvements
+
+These are conceptual improvements only and are not currently implemented in this repository:
+
+- real date handling with LocalDate
+- richer user roles or authentication
+- more advanced search/indexing
+- stronger persistence design for restart-safe reservations
 
 ## License
 
-This repository is licensed under the MIT License. See [LICENSE](LICENSE).
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Authors
 
 - Muhammad Talha
 - Daver Abbas
 - Syed Muneeb
-
-## License
-
-This repository is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
-
-```
-************************************
-SMART LIBRARY MANAGEMENT SYSTEM
-************************************
-1. Add Item              - Register a new book, e-book, or journal
-2. Add User             - Register a new library member
-3. View Items           - Display all library items
-4. Search Item          - Find item by ID or title
-5. Issue Item           - Borrow an item
-6. Return Item          - Return a borrowed item
-7. Reserve Item         - Reserve an unavailable item
-8. Sort Items           - Sort all items alphabetically
-9. Show Reports         - View library statistics
-10. Undo Last Action    - Reverse the previous operation
-11. Save Data           - Persist changes to disk
-12. Exit                - Exit the system
-************************************
-```
-
-### Example Workflow
-
-```
-1. Add Item
-   → Item ID: B001
-   → Title: The Pragmatic Programmer
-   → Type: Book
-   → Author: David Hunt, Andrew Hunt
-   ✓ Item added successfully.
-
-2. Add User
-   → User ID: U001
-   → Name: Aman Kumar
-   ✓ User added successfully.
-
-3. Issue Item
-   → User ID: U001
-   → Item ID: B001
-   → Issue Day: 1
-   ✓ Item issued successfully. Due day: 8
-
-4. Return Item
-   → User ID: U001
-   → Item ID: B001
-   → Return Day: 10
-   ⚠ Return complete with overdue fine. Overdue by 2 days. Fine to pay: Rs 100
-```
-
----
-
-## 📊 Key Classes & Responsibilities
-
-### LibraryService (Core Logic)
-- **Responsibility**: Orchestrate all business operations
-- **Methods**: issueItem(), returnItem(), reserveItem(), undoLastTransaction()
-- **Pattern**: Service/Facade pattern
-
-### LibraryItem (Domain Model)
-- **Responsibility**: Represent borrowable items
-- **Polymorphism**: Each subclass implements fine calculation strategy
-- **Methods**: calculateFine(), isAvailable(), reserveItem()
-
-### InputValidator (Cross-cutting Concern)
-- **Responsibility**: Centralized input validation
-- **Methods**: validateNonEmpty(), validatePositive(), validateDaySequence()
-- **Benefit**: Single source of truth for validation logic
-
-### TransactionAction (Type Safety)
-- **Responsibility**: Replace magic strings with type-safe enum
-- **Values**: ISSUE, RETURN, RESERVE
-- **Benefit**: Compile-time safety, easier refactoring
-
----
-
-## 🏅 OOP Principles Demonstrated
-
-### ✅ SOLID Principles
-
-| Principle | Implementation |
-|-----------|-----------------|
-| **S**ingle Responsibility | Each class has one reason to change (Service, Models, Utils) |
-| **O**pen/Closed | Open for extension (new item types), closed for modification |
-| **L**iskov Substitution | All LibraryItem subtypes are interchangeable |
-| **I**nterface Segregation | Borrowable, FineCalculationStrategy are focused interfaces |
-| **D**ependency Inversion | Service depends on abstractions, not concrete classes |
-
-### ✅ OOP Concepts
-
-- **Encapsulation**: Private fields, public getters
-- **Inheritance**: Person → User; LibraryItem → Book/EBook/Journal
-- **Polymorphism**: Virtual methods (calculateFine, displayInfo)
-- **Abstraction**: Abstract classes and interfaces hide implementation
-
----
-
-## 🧪 Testing
-
-### Run Tests
-```bash
-javac -d bin -cp src src/tests/LibrarySystemTestSuite.java
-java -cp bin tests.LibrarySystemTestSuite
-```
-
-### Test Coverage
-
-The test suite covers:
-- ✅ Item management (add, search, sort)
-- ✅ User operations (registration, borrow limits)
-- ✅ Transaction processing (issue, return, fine calculation)
-- ✅ Edge cases (invalid IDs, limit violations, overdue items)
-- ✅ Undo functionality (transaction reversal)
-
----
-
-## 📈 Code Quality Metrics
-
-- **Cyclomatic Complexity**: Reduced through method extraction
-- **Code Duplication**: Eliminated via InputValidator utility
-- **Method Length**: Average < 20 lines (vs 30+ before refactor)
-- **Test Coverage**: Core functionality covered
-- **JavaDoc**: Comprehensive documentation on all public methods
-
----
-
-## 🎓 Learning Outcomes
-
-This project demonstrates:
-
-1. **Design Patterns**
-   - Strategy pattern (fine calculation)
-   - Service/Facade pattern (LibraryService)
-   - Enum pattern (TransactionAction)
-
-2. **OOP Principles**
-   - Proper use of inheritance and polymorphism
-   - Interface-based design
-   - Encapsulation and data hiding
-
-3. **Software Architecture**
-   - Layered architecture (models → services → UI)
-   - Separation of concerns
-   - Single Responsibility Principle
-
-4. **Best Practices**
-   - Comprehensive error handling
-   - Input validation at service layer
-   - Meaningful exception types
-   - Clear naming conventions
-
-5. **Data Structures**
-   - ArrayList for dynamic collections
-   - Queue for reservation handling
-   - Stack for undo history
-
----
-
-## 🐛 Known Limitations & Future Enhancements
-
-### Current Limitations
-- Numeric day system (not calendar dates)
-- Single-user environment (no concurrent access)
-- CSV format vulnerability to special characters
-- No encrypted storage
-
-### Planned Enhancements
-- [ ] Real date handling (LocalDate)
-- [ ] Role-based access control (Admin/Librarian)
-- [ ] Multi-user concurrent access with locking
-- [ ] Robust CSV parsing with escaping
-- [ ] Book availability status enum
-- [ ] Grace period for fines
-- [ ] User fine payment tracking
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👨‍💼 Authors
-
-**Project Team**
-- Muhammad Talha (Architecture, CLI, Documentation)
-- Daver Abbas (Service Logic, Persistence)
-- Syed Muneeb (Validation, Exception Handling, Testing)
-
-**Refactoring & Professional Enhancement**
-- Comprehensive OOP design improvements
-- Strategy pattern implementation
-- Code quality and maintainability enhancements
-- Documentation and GitHub readiness
-
----
-
-## 🔗 Related Resources
-
-- [Java Design Patterns](https://refactoring.guru/design-patterns/java)
-- [SOLID Principles](https://en.wikipedia.org/wiki/SOLID)
-- [Effective Java](https://www.oreilly.com/library/view/effective-java-3rd/9780134685991/)
-- [Clean Code](https://www.oreilly.com/library/view/clean-code-a/9780136083238/)
-
----
-
-## 📞 Support & Questions
-
-For questions or suggestions:
-1. Open an issue on GitHub
-2. Check existing issues for similar problems
-3. Review the code comments and JavaDoc
-
----
-
-**⭐ If this project helped you, please consider giving it a star!**
-
----
-
-
-
 
 

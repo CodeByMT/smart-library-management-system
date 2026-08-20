@@ -60,20 +60,6 @@ public class InputValidator {
     }
     
     /**
-     * Validates that an integer is non-negative (>= 0).
-     * @param value the integer to validate
-     * @param fieldName the name of the field for error messages
-     * @return the value if valid
-     * @throws IllegalArgumentException if value is negative
-     */
-    public static int validateNonNegative(int value, String fieldName) {
-        if (value < 0) {
-            throw new IllegalArgumentException(fieldName + " cannot be negative.");
-        }
-        return value;
-    }
-    
-    /**
      * Validates that one day is not before another.
      * @param laterDay the day that should be >= earlierDay
      * @param earlierDay the day to compare against
