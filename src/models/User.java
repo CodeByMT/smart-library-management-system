@@ -1,35 +1,96 @@
 package models;
 
+import utils.InputValidator;
+
 import java.util.ArrayList;
 
+/**
+ * Represents a library user and tracks borrowed items.
+ */
 public class User extends Person {
     private final ArrayList<LibraryItem> borrowedItems;
+    private String email;
+    private int maxBorrowLimit = 3;
 
     public User(String id, String name) {
+        this(id, name, "", 3);
+    }
+
+    public User(String id, String name, String email) {
+        this(id, name, email, 3);
+    }
+
+    public User(String id, String name, String email, int maxBorrowLimit) {
         super(id, name);
+        this.email = InputValidator.validateOptionalEmail(email);
+        this.maxBorrowLimit = Math.max(1, maxBorrowLimit);
         this.borrowedItems = new ArrayList<>();
     }
 
-    public void borrowItem(LibraryItem item) {
-        if (!borrowedItems.contains(item)) {
-            borrowedItems.add(item);
+    /**
+     * Adds an item to the user's borrowed list.
+     *
+     * @param item the item being borrowed
+     * @return true when the item was successfully borrowed, false when it was already borrowed
+     */
+    public boolean borrowItem(LibraryItem item) {
+        if (item == null) {
+            return false;
         }
+        if (borrowedItems.contains(item)) {
+            return false;
+        }
+        borrowedItems.add(item);
+        return true;
     }
 
-    public void returnBorrowedItem(LibraryItem item) {
-        borrowedItems.remove(item);
+    /**
+     * Removes the returned item from the user's list.
+     *
+     * @param item the item being returned
+     * @return true when the item was present and removed
+     */
+    public boolean returnBorrowedItem(LibraryItem item) {
+        return item != null && borrowedItems.remove(item);
     }
 
     public ArrayList<LibraryItem> getBorrowedItems() {
         return borrowedItems;
     }
 
+    public boolean canBorrow() {
+        return borrowedItems.size() < maxBorrowLimit;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public int getMaxBorrowLimit() {
+        return maxBorrowLimit;
+    }
+
     public String toCsv() {
-        return id + "," + name;
+        return String.join(",",
+                escapeCsv(id),
+                escapeCsv(name),
+                escapeCsv(email),
+                String.valueOf(maxBorrowLimit));
+    }
+
+    private static String escapeCsv(String value) {
+        if (value == null) {
+            return "";
+        }
+        String escaped = value.replace("\"", "\"\"");
+        if (escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") || escaped.contains("\r")) {
+            return "\"" + escaped + "\"";
+        }
+        return escaped;
     }
 
     @Override
     public String toString() {
-        return id + " - " + name;
+        return id + " - " + name + " (" + email + ")";
     }
 }

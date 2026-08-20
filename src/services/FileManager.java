@@ -6,10 +6,9 @@ import models.Journal;
 import models.LibraryItem;
 import models.Transaction;
 import models.User;
+import utils.InputValidator;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -17,7 +16,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
 
+/**
+ * Utility class responsible for loading and saving CSV data files.
+ *
+ * <p>
+ * This class ensures that the required data folder and files exist,
+ * loads items, users, and transactions, and writes updates back to disk.</p>
+ */
 public class FileManager {
     public static void ensureDataFiles(String dataFolder) {
         try {
@@ -26,16 +34,16 @@ public class FileManager {
                 Files.createDirectories(folderPath);
             }
 
-            createFileWithSampleData(folderPath.resolve("books.csv"), "ItemID,Title,Type,Availability", new String[]{
-                    "B001,Java Fundamentals,Book,true",
-                    "B002,Data Structures in Java,Book,true",
-                    "E001,Networks Today,EBook,true",
-                    "J001,Science Journal,Journal,true"
+            createFileWithSampleData(folderPath.resolve("books.csv"), "ItemID,Title,Author,Type,Availability", new String[]{
+                    "B001,Java Fundamentals,James Gosling,Book,true",
+                    "B002,Data Structures in Java,Robert Lafore,Book,true",
+                    "E001,Networks Today,Andrew Tanenbaum,EBook,true",
+                    "J001,Science Journal,Editorial Board,Journal,true"
             });
 
-            createFileWithSampleData(folderPath.resolve("users.csv"), "UserID,Name", new String[]{
-                    "U001,Aman Kumar",
-                    "U002,Nisha Patel"
+            createFileWithSampleData(folderPath.resolve("users.csv"), "UserID,Name,Email,MaxBorrowLimit", new String[]{
+                    "U001,Aman Kumar,aman@example.com,3",
+                    "U002,Nisha Patel,nisha@example.com,3"
             });
 
             createFileWithSampleData(folderPath.resolve("transactions.csv"), "TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine", new String[]{});
@@ -55,6 +63,60 @@ public class FileManager {
         }
     }
 
+    private static String[] parseCsvLine(String line) {
+        if (line == null) {
+            return new String[0];
+        }
+
+        List<String> values = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    current.append('"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (ch == ',' && !inQuotes) {
+                values.add(current.toString());
+                current.setLength(0);
+            } else if (ch == '\r') {
+                continue;
+            } else {
+                current.append(ch);
+            }
+        }
+
+        if (inQuotes) {
+            return new String[0];
+        }
+
+        values.add(current.toString());
+        return values.toArray(new String[0]);
+    }
+
+    private static String escapeCsvField(String value) {
+        if (value == null) {
+            return "";
+        }
+        String escaped = value.replace("\"", "\"\"");
+        if (escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") || escaped.contains("\r")) {
+            return "\"" + escaped + "\"";
+        }
+        return escaped;
+    }
+
+    private static String normalizeCsvField(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
+    }
+
     public static ArrayList<LibraryItem> loadItems(String filePath) {
         ArrayList<LibraryItem> items = new ArrayList<>();
         File file = new File(filePath);
@@ -63,33 +125,43 @@ public class FileManager {
             return items;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line = reader.readLine();
-            while (line != null) {
+        try (Scanner scanner = new Scanner(file)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
                 String trimmedLine = line.trim();
-                if (!trimmedLine.isEmpty() && !trimmedLine.toLowerCase().contains("itemid")) {
-                    String[] data = line.split(",");
-                    if (data.length >= 4) {
-                        String id = data[0].trim();
-                        String title = data[1].trim();
-                        String type = data[2].trim();
-                        boolean available = Boolean.parseBoolean(data[3].trim());
-                        switch (type.toLowerCase()) {
-                            case "book":
-                                items.add(new Book(id, title, available));
-                                break;
-                            case "ebook":
-                                items.add(new EBook(id, title, available));
-                                break;
-                            case "journal":
-                                items.add(new Journal(id, title, available));
-                                break;
-                            default:
-                                break;
-                        }
-                    }
+                if (trimmedLine.isEmpty() || trimmedLine.toLowerCase().contains("itemid")) {
+                    continue;
                 }
-                line = reader.readLine();
+
+                String[] data = parseCsvLine(line);
+                if (data.length < 5) {
+                    System.out.println("Warning: skipping malformed item row: " + line);
+                    continue;
+                }
+
+                try {
+                    String id = normalizeCsvField(data[0]);
+                    String title = normalizeCsvField(data[1]);
+                    String author = normalizeCsvField(data[2]);
+                    String type = normalizeCsvField(data[3]);
+                    boolean available = Boolean.parseBoolean(normalizeCsvField(data[4]));
+                    switch (type.toLowerCase()) {
+                        case "book":
+                            items.add(new Book(id, title, author, available));
+                            break;
+                        case "ebook":
+                            items.add(new EBook(id, title, author, available));
+                            break;
+                        case "journal":
+                            items.add(new Journal(id, title, author, available));
+                            break;
+                        default:
+                            System.out.println("Warning: unsupported item type in file: " + type);
+                            break;
+                    }
+                } catch (Exception ex) {
+                    System.out.println("Warning: skipping malformed item row: " + line);
+                }
             }
         } catch (IOException e) {
             System.out.println("Error loading items file: " + e.getMessage());
@@ -105,17 +177,37 @@ public class FileManager {
             return users;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line = reader.readLine();
-            while (line != null) {
+        try (Scanner scanner = new Scanner(file)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
                 String trimmedLine = line.trim();
-                if (!trimmedLine.isEmpty() && !trimmedLine.toLowerCase().contains("userid")) {
-                    String[] data = line.split(",");
-                    if (data.length >= 2) {
-                        users.add(new User(data[0].trim(), data[1].trim()));
-                    }
+                if (trimmedLine.isEmpty() || trimmedLine.toLowerCase().contains("userid")) {
+                    continue;
                 }
-                line = reader.readLine();
+
+                String[] data = parseCsvLine(line);
+                if (data.length >= 4) {
+                    try {
+                        String id = normalizeCsvField(data[0]);
+                        String name = normalizeCsvField(data[1]);
+                        String email = normalizeCsvField(data[2]);
+                        int maxBorrow = Integer.parseInt(normalizeCsvField(data[3]));
+
+                        if (!email.isEmpty()) {
+                            InputValidator.validateOptionalEmail(email);
+                        }
+
+                        users.add(new User(id, name, email, maxBorrow));
+                    } catch (NumberFormatException ex) {
+                        System.out.println("Warning: skipping malformed user row: " + line);
+                    } catch (IllegalArgumentException ex) {
+                        System.out.println("Warning: skipping invalid email user row: " + line);
+                    }
+                } else if (data.length == 2) {
+                    users.add(new User(normalizeCsvField(data[0]), normalizeCsvField(data[1])));
+                } else {
+                    System.out.println("Warning: skipping malformed user row: " + line);
+                }
             }
         } catch (IOException e) {
             System.out.println("Error loading users file: " + e.getMessage());
@@ -131,24 +223,32 @@ public class FileManager {
             return transactions;
         }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line = reader.readLine();
-            while (line != null) {
+        try (Scanner scanner = new Scanner(file)) {
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
                 String trimmedLine = line.trim();
-                if (!trimmedLine.isEmpty() && !trimmedLine.toLowerCase().contains("transactionid")) {
-                    String[] data = line.split(",");
-                    if (data.length >= 7) {
-                        String transactionID = data[0].trim();
-                        String userID = data[1].trim();
-                        String itemID = data[2].trim();
-                        int issueDay = Integer.parseInt(data[3].trim());
-                        int dueDay = Integer.parseInt(data[4].trim());
-                        int returnDay = Integer.parseInt(data[5].trim());
-                        double fine = Double.parseDouble(data[6].trim());
-                        transactions.add(new Transaction(transactionID, userID, itemID, issueDay, dueDay, returnDay, fine));
-                    }
+                if (trimmedLine.isEmpty() || trimmedLine.toLowerCase().contains("transactionid")) {
+                    continue;
                 }
-                line = reader.readLine();
+
+                String[] data = parseCsvLine(line);
+                if (data.length < 7) {
+                    System.out.println("Warning: skipping malformed transaction row: " + line);
+                    continue;
+                }
+
+                try {
+                    String transactionID = normalizeCsvField(data[0]);
+                    String userID = normalizeCsvField(data[1]);
+                    String itemID = normalizeCsvField(data[2]);
+                    int issueDay = Integer.parseInt(normalizeCsvField(data[3]));
+                    int dueDay = Integer.parseInt(normalizeCsvField(data[4]));
+                    int returnDay = Integer.parseInt(normalizeCsvField(data[5]));
+                    double fine = Double.parseDouble(normalizeCsvField(data[6]));
+                    transactions.add(new Transaction(transactionID, userID, itemID, issueDay, dueDay, returnDay, fine));
+                } catch (NumberFormatException ex) {
+                    System.out.println("Warning: skipping malformed transaction row: " + line);
+                }
             }
         } catch (IOException e) {
             System.out.println("Error loading transactions file: " + e.getMessage());
@@ -158,7 +258,7 @@ public class FileManager {
 
     public static void saveItems(String filePath, ArrayList<LibraryItem> items) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
-            writer.println("ItemID,Title,Type,Availability");
+            writer.println("ItemID,Title,Author,Type,Availability");
             for (LibraryItem item : items) {
                 writer.println(item.toCsv());
             }
@@ -169,7 +269,7 @@ public class FileManager {
 
     public static void saveUsers(String filePath, ArrayList<User> users) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
-            writer.println("UserID,Name");
+            writer.println("UserID,Name,Email,MaxBorrowLimit");
             for (User user : users) {
                 writer.println(user.toCsv());
             }

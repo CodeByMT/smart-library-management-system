@@ -1,0 +1,60 @@
+# Java build artifacts
+*.class
+*.jar
+*.war
+*.ear
+
+# Build output
+bin/
+out/
+build/
+dist/
+target/
+
+# IDE and editor metadata
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+*.swp
+*.swo
+*~
+.temp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+test_data/
+
+# Node/npm (not used in this project)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python artifacts (not used in this project)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# Misc
+*.orig
+*.md.bak

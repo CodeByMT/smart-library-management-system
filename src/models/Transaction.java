@@ -1,5 +1,8 @@
 package models;
 
+/**
+ * Represents an issue or return transaction for a library item.
+ */
 public class Transaction {
     private String transactionID;
     private String userID;
@@ -60,8 +63,25 @@ public class Transaction {
     }
 
     public String toCsv() {
-        return transactionID + "," + userID + "," + itemID + "," + issueDay + "," + dueDay + "," + returnDay + ","
-                + fine;
+        return String.join(",",
+                escapeCsv(transactionID),
+                escapeCsv(userID),
+                escapeCsv(itemID),
+                String.valueOf(issueDay),
+                String.valueOf(dueDay),
+                String.valueOf(returnDay),
+                String.valueOf(fine));
+    }
+
+    private static String escapeCsv(String value) {
+        if (value == null) {
+            return "";
+        }
+        String escaped = value.replace("\"", "\"\"");
+        if (escaped.contains(",") || escaped.contains("\"") || escaped.contains("\n") || escaped.contains("\r")) {
+            return "\"" + escaped + "\"";
+        }
+        return escaped;
     }
 
     @Override
@@ -71,7 +91,6 @@ public class Transaction {
     }
 
 }
-
     
                 
                 

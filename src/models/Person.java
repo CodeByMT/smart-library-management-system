@@ -1,5 +1,8 @@
 package models;
 
+/**
+ * Base type for people who interact with the library.
+ */
 public abstract class Person {
     protected String id;
     protected String name;
@@ -19,6 +22,6 @@ public abstract class Person {
 
     @Override
     public String toString() {
-        return id + " - " + name;
+        return id + " _ " + name;
     }
 }

@@ -1,20 +1,21 @@
-B101,Object Oriented Programming,Book,True
-B102,Data Structures and Algorithms,Book,False
-B103,Database Systems,Book,True
-B104,Operating Systems,Book,True
-B105,Computer Networks,Book,False
-B106,Software Engineering,Book,True
-B107,Discrete Mathematics,Book,True
-B108,Artificial Intelligence,Book,True
-B109,Digital Logic Design,Book,False
-B110,Theory of Automata,Book,True
-E201,Java Programming Guide,EBook,True
-E202,Python for Beginners,EBook,True
-E203,Cloud Computing Essentials,EBook,False
-E204,Cyber Security Basics,EBook,True
-E205,Machine Learning Concepts,EBook,True
-J301,IEEE Research Journal,Journal,True
-J302,ACM Computing Survey,Journal,False
-J303,NIT Tech Magazine,Journal,True
-J304,Advanced Computing Journal,Journal,True
-J305,Software Trends Review,Journal,False
+ItemID,Title,Author,Type,Availability
+J302,ACM Computing Survey,Editorial Board,Journal,false
+J304,Advanced Computing Journal,Editorial Board,Journal,true
+B108,Artificial Intelligence,Frank Garcia,Book,true
+E203,Cloud Computing Essentials,Kevin White,EBook,false
+B105,Computer Networks,Charlie Brown,Book,false
+E204,Cyber Security Basics,Laura Thompson,EBook,true
+B102,Data Structures and Algorithms,Jane Smith,Book,false
+B103,Database Systems,Alice Johnson,Book,true
+B109,Digital Logic Design,Grace Lee,Book,false
+B107,Discrete Mathematics,Eve Miller,Book,true
+J301,IEEE Research Journal,Editorial Board,Journal,true
+E201,Java Programming Guide,Ian Anderson,EBook,false
+E205,Machine Learning Concepts,Michael Jackson,EBook,true
+J303,NIT Tech Magazine,Editorial Board,Journal,true
+B101,Object Oriented Programming,John Doe,Book,true
+B104,Operating Systems,Bob Wilson,Book,true
+E202,Python for Beginners,Julia Martinez,EBook,true
+B106,Software Engineering,Diana Davis,Book,true
+J305,Software Trends Review,Editorial Board,Journal,false
+B110,Theory of Automata,Henry Taylor,Book,true

@@ -1,10 +1,11 @@
-U001,Muhammad Talha
-U002,Daver Abbas
-U003,Syed Muneeb
-U004,Ali Raza
-U005,Ahmed Hassan
-U006,Zain Ul Abideen
-U007,Hamza Tariq
-U008,Ayesha Noor
-U009,Fatima Khan
-U010,Umar Farooq
+UserID,Name,Email,MaxBorrowLimit
+U001,Muhammad Talha,talha@example.com,3
+U002,Daver Abbas,daver@example.com,3
+U003,Syed Muneeb,muneeb@example.com,3
+U004,Ali Raza,ali@example.com,3
+U005,Ahmed Hassan,ahmed@example.com,3
+U006,Zain Ul Abideen,zain@example.com,3
+U007,Hamza Tariq,hamza@example.com,3
+U008,Ayesha Noor,ayesha@example.com,3
+U009,Fatima Khan,fatima@example.com,3
+U010,Umar Farooq,umar@example.com,3
