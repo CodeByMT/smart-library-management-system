@@ -3,7 +3,9 @@ package models;
 import interfaces.Borrowable;
 
 import java.util.LinkedList;
-import java.util.Queue;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Base library item for books, e-books, and journals.
@@ -23,7 +25,7 @@ public abstract class LibraryItem implements Borrowable {
      * This queue is intentionally not persisted to CSV and is cleared when a new
      * LibraryService instance loads the application data.
      */
-    protected Queue<String> reservationQueue;
+    protected LinkedList<String> reservationQueue;
     /**
      * Historical number of successful issue events for this item.
      * This is not the current active borrow count; availability and transaction return state
@@ -67,10 +69,12 @@ public abstract class LibraryItem implements Borrowable {
         if (userId == null || userId.trim().isEmpty()) {
             return false;
         }
-        if (reservationQueue.contains(userId)) {
-            return false;
+        for (String reservedUserId : reservationQueue) {
+            if (reservedUserId.equalsIgnoreCase(userId.trim())) {
+                return false;
+            }
         }
-        return reservationQueue.offer(userId);
+        return reservationQueue.offer(userId.trim());
     }
 
     public boolean restoreReservationAtFront(String userId) {
@@ -80,11 +84,8 @@ public abstract class LibraryItem implements Borrowable {
         if (reservationQueue.contains(userId)) {
             return false;
         }
-        if (reservationQueue instanceof LinkedList) {
-            ((LinkedList<String>) reservationQueue).addFirst(userId);
-            return true;
-        }
-        return reservationQueue.offer(userId);
+        reservationQueue.addFirst(userId.trim());
+        return true;
     }
 
     public String getAuthor() {
@@ -100,7 +101,19 @@ public abstract class LibraryItem implements Borrowable {
     }
 
     public boolean removeReservation(String userId) {
-        return reservationQueue.remove(userId);
+        if (userId == null) {
+            return false;
+        }
+        for (String reservedUserId : reservationQueue) {
+            if (reservedUserId.equalsIgnoreCase(userId.trim())) {
+                return reservationQueue.remove(reservedUserId);
+            }
+        }
+        return false;
+    }
+
+    public List<String> getReservationQueue() {
+        return Collections.unmodifiableList(new ArrayList<>(reservationQueue));
     }
 
     public boolean hasReservation() {

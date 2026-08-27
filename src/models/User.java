@@ -3,6 +3,8 @@ package models;
 import utils.InputValidator;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Represents a library user and tracks borrowed items.
@@ -54,8 +56,8 @@ public class User extends Person {
         return item != null && borrowedItems.remove(item);
     }
 
-    public ArrayList<LibraryItem> getBorrowedItems() {
-        return borrowedItems;
+    public List<LibraryItem> getBorrowedItems() {
+        return Collections.unmodifiableList(borrowedItems);
     }
 
     public boolean canBorrow() {

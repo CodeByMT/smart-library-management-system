@@ -15,8 +15,18 @@ import utils.InputValidator;
 import utils.SearchUtil;
 import utils.SortUtil;
 
+import java.util.stream.Collectors;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 
 /**
  * Core service layer for library operations.
@@ -33,13 +43,18 @@ import java.util.ArrayList;
  *   <li>Transaction processing (issue, return, reserve)</li>
  *   <li>Undo/rollback functionality</li>
  *   <li>Data persistence coordination</li>
+
  *   <li>Library reporting</li>
  * </ul>
  */
 public class LibraryService {
+    private static final long LOAN_PERIOD_DAYS = 7;
+
     private final ArrayList<LibraryItem> items;
     private final ArrayList<User> users;
     private final ArrayList<Transaction> transactions;
+    private final Map<String, LibraryItem> itemsById;
+    private final Map<String, User> usersById;
     private final ArrayDeque<UndoRecord> undoStack;
     private final String dataFolder;
 
@@ -49,17 +64,43 @@ public class LibraryService {
         this.items = FileManager.loadItems(dataFolder + "/books.csv");
         this.users = FileManager.loadUsers(dataFolder + "/users.csv");
         this.transactions = FileManager.loadTransactions(dataFolder + "/transactions.csv");
+        this.itemsById = new HashMap<>();
+        this.usersById = new HashMap<>();
         this.undoStack = new ArrayDeque<>();
+        indexLoadedEntities();
         rebuildBorrowCountsFromTransactions();
         restoreItemAvailabilityFromTransactions();
+        restoreBorrowedItemsFromTransactions();
     }
 
-    public ArrayList<LibraryItem> getItems() {
-        return items;
+    public List<LibraryItem> getItems() {
+        return Collections.unmodifiableList(items);
     }
 
-    public ArrayList<User> getUsers() {
-        return users;
+    public List<User> getUsers() {
+        return Collections.unmodifiableList(users);
+    }
+
+    public List<Transaction> getTransactions() {
+        return Collections.unmodifiableList(transactions);
+    }
+
+    public List<Transaction> getBorrowingHistoryForUser(String userID) {
+        if (userID == null) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(transactions.stream()
+                .filter(transaction -> transaction.getUserID().equalsIgnoreCase(userID.trim()))
+                .collect(Collectors.toList()));
+    }
+
+    public List<Transaction> getBorrowingHistoryForItem(String itemID) {
+        if (itemID == null) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(transactions.stream()
+                .filter(transaction -> transaction.getItemID().equalsIgnoreCase(itemID.trim()))
+                .collect(Collectors.toList()));
     }
 
     public void addItem(String itemID, String title, String type) {
@@ -102,6 +143,7 @@ public class LibraryService {
         }
 
         items.add(item);
+        itemsById.put(normalizeId(itemID), item);
         System.out.println("Item added successfully.");
     }
 
@@ -126,7 +168,9 @@ public class LibraryService {
             throw new IllegalArgumentException("User ID already exists: " + userID);
         }
 
-        users.add(new User(userID, name, email));
+        User user = new User(userID, name, email);
+        users.add(user);
+        usersById.put(normalizeId(userID), user);
         System.out.println("User added successfully.");
     }
 
@@ -184,12 +228,32 @@ public class LibraryService {
         SearchUtil.searchByTitle(items, keyword);
     }
 
+    public List<LibraryItem> searchItems(String keyword) {
+        return Collections.unmodifiableList(SearchUtil.searchByKeyword(items, keyword));
+    }
+
+    public List<LibraryItem> filterItems(String type, Boolean available) {
+        Set<String> types = new HashSet<>();
+        if (type != null) {
+            types.add(type);
+        }
+        return filterItems(types, available);
+    }
+
+    public List<LibraryItem> filterItems(Set<String> types, Boolean available) {
+        return Collections.unmodifiableList(SearchUtil.filter(items, types, available));
+    }
+
     public void sortItems() {
         SortUtil.bubbleSortByTitle(items);
     }
 
+    public void sortItemsBy(SortUtil.SortOption option) {
+        SortUtil.sort(items, option);
+    }
+
     /**
-     * Issues a library item to a user.
+     * Issues a library item using the legacy day-number API.
      * 
      * <p>Validates availability and user borrow limits. Removes the user from the
      * reservation queue if they are first in line. Creates a transaction record
@@ -197,7 +261,7 @@ public class LibraryService {
      *
      * @param userID the ID of the user borrowing the item
      * @param itemID the ID of the item to borrow
-     * @param issueDay the day on which the item is issued (for due date calculation)
+    * @param issueDay the legacy day number on which the item is issued
      * @throws InvalidUserException if the user ID is not found
      * @throws ItemNotAvailableException if the item is not found, not available, user has reached borrow limit,
      *                                  or item is reserved by another user
@@ -207,6 +271,17 @@ public class LibraryService {
     public void issueItem(String userID, String itemID, int issueDay) 
             throws InvalidUserException, ItemNotAvailableException {
         InputValidator.validatePositive(issueDay, "Issue day");
+        issueItem(userID, itemID, legacyDayToDate(issueDay));
+    }
+
+    /**
+     * Issues a library item using a calendar date.
+     *
+     * @param issueDate the calendar date on which the item is issued
+     */
+    public void issueItem(String userID, String itemID, LocalDate issueDate)
+            throws InvalidUserException, ItemNotAvailableException {
+        InputValidator.validateDate(issueDate, "Issue date");
         
         User user = findUserById(userID);
         if (user == null) {
@@ -231,14 +306,14 @@ public class LibraryService {
         
         // Create and record the transaction
         String transactionId = buildTransactionId();
-        int dueDay = issueDay + 7;
-        Transaction transaction = new Transaction(transactionId, userID, itemID, issueDay, dueDay, 0, 0.0);
+        LocalDate dueDate = issueDate.plusDays(LOAN_PERIOD_DAYS);
+        Transaction transaction = new Transaction(transactionId, userID, itemID, issueDate, dueDate, null, 0.0);
         transactions.add(transaction);
         
         // Record undo information
         undoStack.push(new UndoRecord(TransactionAction.ISSUE, transaction, itemID, userID, removedReservation));
 
-        System.out.println("Item issued successfully. Due day: " + dueDay);
+        System.out.println("Item issued successfully. Due date: " + dueDate);
     }
     
     /**
@@ -279,7 +354,7 @@ public class LibraryService {
     }
 
     /**
-     * Processes the return of a borrowed item.
+     * Processes a return using the legacy day-number API.
      * 
      * <p>Validates the return operation, calculates any overdue fines, and updates
      * transaction records. If overdue fines apply, throws OverdueException with
@@ -287,7 +362,7 @@ public class LibraryService {
      *
      * @param userID the ID of the user returning the item
      * @param itemID the ID of the item being returned
-     * @param returnDay the day on which the item is returned
+    * @param returnDay the legacy day number on which the item is returned
      * @throws InvalidUserException if the user ID is not found
      * @throws ItemNotAvailableException if the item is not found or no active transaction exists
      * @throws OverdueException if the return is late (item is still returned, but exception carries fine info)
@@ -296,6 +371,17 @@ public class LibraryService {
     public void returnItem(String userID, String itemID, int returnDay) 
             throws InvalidUserException, ItemNotAvailableException, OverdueException {
         InputValidator.validatePositive(returnDay, "Return day");
+        returnItem(userID, itemID, legacyDayToDate(returnDay));
+    }
+
+    /**
+     * Processes a return using a calendar date.
+     *
+     * @param returnDate the calendar date on which the item is returned
+     */
+    public void returnItem(String userID, String itemID, LocalDate returnDate)
+            throws InvalidUserException, ItemNotAvailableException, OverdueException {
+        InputValidator.validateDate(returnDate, "Return date");
         
         User user = findUserById(userID);
         if (user == null) {
@@ -312,19 +398,19 @@ public class LibraryService {
             throw new ItemNotAvailableException("No active issue transaction found for this item and user.");
         }
 
-        InputValidator.validateDaySequence(returnDay, transaction.getIssueDay(), 
-                                          "Return day", "Issue day");
+        InputValidator.validateDateSequence(returnDate, transaction.getIssueDate(),
+                          "Return date", "Issue date");
 
         // Process the return
         item.returnItem(user);
         user.returnBorrowedItem(item);
-        transaction.setReturnDay(returnDay);
+        transaction.setReturnDate(returnDate);
 
         // Calculate fine if overdue
-        int daysLate = Math.max(0, returnDay - transaction.getDueDay());
+        long daysLate = Math.max(0, ChronoUnit.DAYS.between(transaction.getDueDate(), returnDate));
         double fine = 0.0;
         if (daysLate > 0) {
-            fine = item.calculateFine(daysLate);
+            fine = item.calculateFine(Math.toIntExact(daysLate));
             transaction.setFine(fine);
         }
 
@@ -377,33 +463,52 @@ public class LibraryService {
         System.out.println("Reservation added. Current queue: " + item.getReservationList());
     }
 
+    public boolean cancelReservation(String userID, String itemID)
+            throws InvalidUserException, ItemNotAvailableException {
+        InputValidator.validateNonEmpty(userID, "User ID");
+        InputValidator.validateNonEmpty(itemID, "Item ID");
+        if (findUserById(userID) == null) {
+            throw new InvalidUserException("User ID not found: " + userID);
+        }
+        LibraryItem item = findItemById(itemID);
+        if (item == null) {
+            throw new ItemNotAvailableException("Item ID not found: " + itemID);
+        }
+        boolean removed = item.removeReservation(userID);
+        if (removed) {
+            System.out.println("Reservation cancelled.");
+        }
+        return removed;
+    }
+
+    public List<String> getReservationQueue(String itemID) throws ItemNotAvailableException {
+        InputValidator.validateNonEmpty(itemID, "Item ID");
+        LibraryItem item = findItemById(itemID);
+        if (item == null) {
+            throw new ItemNotAvailableException("Item ID not found: " + itemID);
+        }
+        return item.getReservationQueue();
+    }
+
+    public void recordFinePayment(String transactionID, double amount, LocalDate paymentDate) {
+        InputValidator.validateNonEmpty(transactionID, "Transaction ID");
+        InputValidator.validateDate(paymentDate, "Payment date");
+        Transaction transaction = findTransactionById(transactionID);
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction ID not found: " + transactionID);
+        }
+        if (!transaction.isReturned()) {
+            throw new IllegalStateException("Fine payments can only be recorded after an item is returned.");
+        }
+        transaction.recordPayment(amount, paymentDate);
+        System.out.println("Fine payment recorded successfully.");
+    }
+
     public void saveData() {
         FileManager.saveItems(dataFolder + "/books.csv", items);
         FileManager.saveUsers(dataFolder + "/users.csv", users);
         FileManager.saveTransactions(dataFolder + "/transactions.csv", transactions);
         System.out.println("Data saved successfully.");
-    }
-
-    public void showReports() {
-        long totalItems = items.size();
-        long availableItems = items.stream().filter(LibraryItem::isAvailable).count();
-        long issuedItems = totalItems - availableItems;
-
-        // The most-borrowed report intentionally uses the historical issue count.
-        // This is not the number of items currently checked out; availability is tracked separately.
-        LibraryItem mostBorrowed = null;
-        for (LibraryItem item : items) {
-            if (mostBorrowed == null || item.getBorrowCount() > mostBorrowed.getBorrowCount()) {
-                mostBorrowed = item;
-            }
-        }
-
-        System.out.println("--- LIBRARY REPORT ---");
-        System.out.println("Total items: " + totalItems);
-        System.out.println("Available items: " + availableItems);
-        System.out.println("Issued items: " + issuedItems);
-        System.out.println("Total users: " + users.size());
-        System.out.println("Most borrowed item: " + (mostBorrowed != null ? mostBorrowed.getTitle() + " (" + mostBorrowed.getBorrowCount() + " times)" : "None"));
     }
 
     /**
@@ -479,7 +584,7 @@ public class LibraryService {
         if (transaction != null && item != null && user != null) {
             item.setAvailable(false);
             user.borrowItem(item);
-            transaction.setReturnDay(0);
+            transaction.setReturnDate(null);
             transaction.setFine(0.0);
             System.out.println("Undo successful: return transaction reversed.");
             return true;
@@ -503,21 +608,33 @@ public class LibraryService {
     }
 
     private LibraryItem findItemById(String itemID) {
-        for (LibraryItem item : items) {
-            if (item.getItemID().equalsIgnoreCase(itemID)) {
-                return item;
+        return itemID == null ? null : itemsById.get(normalizeId(itemID));
+    }
+
+    private User findUserById(String userID) {
+        return userID == null ? null : usersById.get(normalizeId(userID));
+    }
+
+    private Transaction findTransactionById(String transactionID) {
+        for (Transaction transaction : transactions) {
+            if (transaction.getTransactionID().equalsIgnoreCase(transactionID.trim())) {
+                return transaction;
             }
         }
         return null;
     }
 
-    private User findUserById(String userID) {
-        for (User user : users) {
-            if (user.getId().equalsIgnoreCase(userID)) {
-                return user;
-            }
+    private void indexLoadedEntities() {
+        for (LibraryItem item : items) {
+            itemsById.put(normalizeId(item.getItemID()), item);
         }
-        return null;
+        for (User user : users) {
+            usersById.put(normalizeId(user.getId()), user);
+        }
+    }
+
+    private String normalizeId(String id) {
+        return id.toLowerCase(Locale.ROOT);
     }
 
     private Transaction findActiveTransaction(String itemID, String userID) {
@@ -560,6 +677,53 @@ public class LibraryService {
         }
     }
 
+    private void restoreBorrowedItemsFromTransactions() {
+        for (Transaction transaction : transactions) {
+            if (!transaction.isReturned()) {
+                User user = findUserById(transaction.getUserID());
+                LibraryItem item = findItemById(transaction.getItemID());
+                if (user != null && item != null) {
+                    user.borrowItem(item);
+                }
+            }
+        }
+    }
+
+    public List<String> validateDataIntegrity() {
+        List<String> issues = new ArrayList<>();
+        Set<String> itemIDs = new HashSet<>();
+        for (LibraryItem item : items) {
+            if (!itemIDs.add(normalizeId(item.getItemID()))) {
+                issues.add("Duplicate item ID: " + item.getItemID());
+            }
+        }
+        Set<String> userIDs = new HashSet<>();
+        for (User user : users) {
+            if (!userIDs.add(normalizeId(user.getId()))) {
+                issues.add("Duplicate user ID: " + user.getId());
+            }
+        }
+        Set<String> activeItems = new HashSet<>();
+        for (Transaction transaction : transactions) {
+            if (findItemById(transaction.getItemID()) == null) {
+                issues.add("Transaction references missing item: " + transaction.getItemID());
+            }
+            if (findUserById(transaction.getUserID()) == null) {
+                issues.add("Transaction references missing user: " + transaction.getUserID());
+            }
+            if (!transaction.isReturned() && !activeItems.add(normalizeId(transaction.getItemID()))) {
+                issues.add("Multiple active transactions for item: " + transaction.getItemID());
+            }
+        }
+        for (LibraryItem item : items) {
+            boolean active = activeItems.contains(normalizeId(item.getItemID()));
+            if (active == item.isAvailable()) {
+                issues.add("Availability mismatch for item: " + item.getItemID());
+            }
+        }
+        return Collections.unmodifiableList(issues);
+    }
+
     private String buildTransactionId() {
         int maxId = 0;
         for (Transaction transaction : transactions) {
@@ -572,5 +736,55 @@ public class LibraryService {
             }
         }
         return String.format("T%03d", maxId + 1);
+    }
+
+    private String formatAmount(double amount) {
+        return String.format("%.2f", amount);
+    }
+
+    public void showReports() {
+        showReports(LocalDate.now());
+    }
+
+    public void showReports(LocalDate asOfDate) {
+        InputValidator.validateDate(asOfDate, "Report date");
+        long overdueItems = transactions.stream()
+                .filter(transaction -> !transaction.isReturned()
+                        && transaction.getDueDate().isBefore(asOfDate))
+                .count();
+        showReportSummary(overdueItems);
+    }
+
+    private void showReportSummary(long overdueItems) {
+        long totalItems = items.size();
+        long availableItems = items.stream().filter(LibraryItem::isAvailable).count();
+        long issuedItems = totalItems - availableItems;
+
+        LibraryItem mostBorrowed = null;
+        for (LibraryItem item : items) {
+            if (mostBorrowed == null || item.getBorrowCount() > mostBorrowed.getBorrowCount()) {
+                mostBorrowed = item;
+            }
+        }
+
+        System.out.println("--- LIBRARY REPORT ---");
+        System.out.println("Total items: " + totalItems);
+        System.out.println("Available items: " + availableItems);
+        System.out.println("Issued items: " + issuedItems);
+        System.out.println("Overdue items: " + overdueItems);
+        System.out.println("Total users: " + users.size());
+        System.out.println("Total fines assessed: Rs " + formatAmount(transactions.stream()
+            .mapToDouble(Transaction::getFine).sum()));
+        System.out.println("Total fines paid: Rs " + formatAmount(transactions.stream()
+            .mapToDouble(Transaction::getPaidFine).sum()));
+        System.out.println("Outstanding fines: Rs " + formatAmount(transactions.stream()
+            .mapToDouble(Transaction::getOutstandingFine).sum()));
+        System.out.println("Active reservations: " + items.stream()
+            .mapToInt(item -> item.getReservationQueue().size()).sum());
+        System.out.println("Most borrowed item: " + (mostBorrowed != null ? mostBorrowed.getTitle() + " (" + mostBorrowed.getBorrowCount() + " times)" : "None"));
+    }
+
+    private LocalDate legacyDayToDate(int day) {
+        return LocalDate.of(1970, 1, 1).plusDays(day - 1L);
     }
 }

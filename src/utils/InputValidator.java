@@ -1,5 +1,7 @@
 package utils;
 
+import java.time.LocalDate;
+
 /**
  * Centralized validation utility for library system inputs.
  * Provides reusable validation methods to ensure data integrity.
@@ -73,6 +75,24 @@ public class InputValidator {
             throw new IllegalArgumentException(
                 laterFieldName + " (" + laterDay + ") cannot be before " + 
                 earlierFieldName + " (" + earlierDay + ").");
+        }
+    }
+
+    public static LocalDate validateDate(LocalDate date, String fieldName) {
+        if (date == null) {
+            throw new IllegalArgumentException(fieldName + " cannot be null.");
+        }
+        return date;
+    }
+
+    public static void validateDateSequence(LocalDate laterDate, LocalDate earlierDate,
+                                            String laterFieldName, String earlierFieldName) {
+        validateDate(laterDate, laterFieldName);
+        validateDate(earlierDate, earlierFieldName);
+        if (laterDate.isBefore(earlierDate)) {
+            throw new IllegalArgumentException(
+                    laterFieldName + " (" + laterDate + ") cannot be before "
+                            + earlierFieldName + " (" + earlierDate + ").");
         }
     }
 }

@@ -1,84 +1,64 @@
 # Contributing to the Smart Library Management System
 
-This project is a small Java CLI and CSV-based library system for a student OOP assignment. Contributions should stay within that scope and should not add frameworks, databases, or unrelated technologies.
+## Scope
 
-## Project scope
-
-The repository is intentionally simple:
-
-- Java standard library only
-- command-line interface
-- CSV persistence
-- object-oriented domain model
-- custom test suite instead of JUnit
-
-Keep changes consistent with this structure.
+Keep contributions within the existing Java standard-library CLI, object-oriented domain model, and CSV persistence design. Avoid frameworks, databases, GUI layers, and unrelated refactors.
 
 ## Local setup
 
-1. Clone the repository.
-2. Open the project in a Java-capable editor or terminal.
-3. Use the existing source layout under src/.
+Use JDK 8 or later and work from the repository root. Source files are under `src/`; compiled classes are written to `bin/`.
 
-## Build instructions
+## Build and test
 
-Compile the project with the current working command:
+Compile all sources:
 
 ```powershell
 javac -d bin -cp src @((Get-ChildItem -Path src -Recurse -Filter *.java | ForEach-Object { $_.FullName }))
 ```
 
-## Test instructions
-
-Run the project’s existing regression suite:
+Run the complete custom regression suite:
 
 ```powershell
 java -cp bin tests.LibrarySystemTestSuite
 ```
 
-Run the CLI application:
+Run the CLI:
 
 ```powershell
 java -cp bin main.Main
 ```
 
-## Contribution guidelines
+The test runner uses only the standard library. It covers management, search/filter/sort, `LocalDate` transactions, fines and payments, reservations, undo, reports, integrity checks, validation, and CSV round trips.
 
-- Keep changes focused and easy to review.
-- Do not change the project architecture or add new technologies.
-- Do not modify the CSV schema unless the current requirement explicitly requires it.
-- Preserve the existing semantics:
-  - available = current item availability
-  - borrowCount = historical issue count
-  - reservations = session-only in memory
-- Preserve validation behavior for user IDs, optional email input, and positive day values.
-- Avoid broad refactors unrelated to the current bug or requirement.
-- Prefer simple Java OOP patterns already used in the project.
+## Design guidelines
+
+- Keep business rules in `LibraryService` or the relevant model, not in `Main`.
+- Preserve polymorphism among `Book`, `EBook`, and `Journal`.
+- Use `LocalDate` for new transaction operations. Keep legacy numeric adapters only for compatibility.
+- Preserve the meanings of `available`, historical `borrowCount`, persisted transactions, and session-only reservations.
+- Keep collection boundaries encapsulated and return read-only views for inspection-only APIs.
+- Reuse `HashMap`, `HashSet`, queues, deques, comparators, and existing utilities when they provide a real benefit.
+- Preserve CSV compatibility where practical and do not silently discard existing fields.
+- Keep public behavior and exception semantics stable unless a change explicitly requires otherwise.
 
 ## Code style
 
-- Use Java naming conventions.
-- Keep methods readable and focused.
-- Preserve the current package structure.
-- Follow the style already used in the project rather than introducing new conventions.
+- Follow Java naming conventions and the existing package structure.
+- Keep methods focused and avoid duplicated validation or formatting logic.
+- Prefer clear standard-library solutions over unnecessary abstractions.
+- Add concise comments only where behavior is not obvious from the code.
 
-## What to avoid
+## Tests and changes
 
-- No SQLite, databases, or JDBC.
-- No framework additions such as Spring, Hibernate, or GUI libraries.
-- No external libraries for persistence or UI.
-- No broader redesign of the application.
-- No changes to the existing CSV schema or required file layout.
+Add focused regression coverage for every behavior change. Before submitting a change:
 
-## Pull requests and review
+1. Compile all Java sources.
+2. Run `tests.LibrarySystemTestSuite` to completion.
+3. Check that generated test files and application data are not unintentionally changed.
+4. Update architecture or UML documentation when public responsibilities or relationships change.
 
-When preparing a change:
+Do not commit or push from an automated coding session unless explicitly requested.
 
-- confirm the project still compiles
-- run the full LibrarySystemTestSuite
-- keep the diff limited to the relevant files
-- explain the reason for the change and the behavior it preserves
+## Known boundaries
 
-## Questions
-
-If a change is unclear, review the current source and test suite before proposing a broader redesign. This project is intentionally small and course-oriented, so the safest contributions are narrow and behavior-preserving.
+The application is single-user, has no authentication or concurrency model, uses CSV rather than a database, and keeps reservations in memory for the current session only. CSV parsing supports quoted fields but not multiline records.

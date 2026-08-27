@@ -1,168 +1,114 @@
 # Smart Library Management System
 
-A simple Java command-line library management system built for a student OOP project. It stores data in CSV files, supports library operations such as issue, return, reservation, undo, and reporting, and keeps the code focused on the Java course scope.
-
 ## Overview
 
-This repository contains a CLI-based library system written in Java. The application is structured around a small layered design:
-
-- Main.java provides the interactive menu-driven CLI
-- LibraryService contains the main business logic
-- FileManager stores and loads CSV data
-- model classes represent items, users, and transactions
-- utility classes handle validation, search, and sorting
-
-The project uses standard Java libraries only and does not introduce frameworks, a database, or a GUI.
+A Java command-line library system with CSV persistence. It manages books, e-books, journals, users, reservations, borrowing transactions, overdue fines, payments, undo operations, reports, and record-integrity checks.
 
 ## Features
 
-The project currently implements the following behaviors:
+- Add books, e-books, and journals with IDs, titles, and authors.
+- Register users with optional validated email addresses and borrow limits.
+- Search by item ID, title, or author; filter by type and availability.
+- Sort by title, author, type, availability, or historical borrow count.
+- Issue and return items using `LocalDate`; due dates are seven days after issue.
+- Calculate type-specific overdue fines and record partial or complete payments.
+- Reserve items with FIFO queues, inspect queues, and cancel reservations.
+- View borrowing history by user or item.
+- Undo the latest issue, return, or reservation action.
+- Display inventory, loan, overdue, reservation, and fine statistics.
+- Validate duplicate IDs, missing references, duplicate active loans, and availability mismatches.
+- Save and load data through quote-aware CSV handling.
 
-- Add and manage Book, EBook, and Journal items
-- Register users and validate user IDs and optional email input
-- Search items by ID or title
-- Sort items by title
-- Issue items to users with due-day tracking
-- Return items and calculate overdue fines
-- Reserve unavailable items using a FIFO queue for the current session
-- Record transaction history for issue and return activity
-- Undo the most recent issue, return, or reservation action
-- Show basic reports such as total items, available items, issued items, and most-borrowed item
-- Persist users, items, and transactions to CSV files under the data folder
+## Technologies and Java/OOP concepts
 
-## Important state semantics
+- Java 8 or later and the standard library only.
+- CLI presentation, a service layer, domain models, and CSV persistence.
+- Abstract classes and inheritance: `LibraryItem` is extended by `Book`, `EBook`, and `Journal`; `User` extends `Person`.
+- Polymorphism: item types provide their own fine calculation and display behavior.
+- Interfaces and Strategy pattern: `Borrowable` and `FineCalculationStrategy`.
+- Encapsulation: service collections and borrowed-item lists are exposed as read-only views.
+- Enums: `TransactionAction` and `SortUtil.SortOption`.
+- Composition: users contain borrowed items, items contain reservation queues, and undo records contain transaction details.
+- Collections: `ArrayList`, `HashMap`, `HashSet`, `LinkedList`, and `ArrayDeque` are used for ordered records, indexes, filters, reservations, and undo history.
 
-The current implementation intentionally uses these meanings:
+## Architecture
 
-- available = current item availability
-- borrowCount = historical issue count, not the current number of active loans
-- reservations = session-only in-memory state; not persisted to CSV
-- transactions = persisted issue/return history used to reconstruct active state and issue counts
-
-## CSV behavior
-
-The current CSV logic is quote-aware for the supported format:
-
-- commas inside a field are supported
-- quotes inside a field are supported
-- malformed or incomplete CSV rows are skipped safely with warnings
-- multiline CSV fields are not supported
-
-Reservation information is intentionally not stored in CSV files. A fresh LibraryService instance starts with an empty reservation queue.
-
-## Tech stack
-
-- Java standard library
-- CLI application
-- CSV persistence
-- basic object-oriented domain model
+`Main` handles menus, input, and display. `LibraryService` owns business rules and coordinates models, utilities, and `FileManager`. See [ARCHITECTURE.md](ARCHITECTURE.md) and [UML_Diagrams.md](UML_Diagrams.md).
 
 ## Project structure
 
 ```text
 SmartLibraryManagementSystem/
-├── data/                    # Runtime CSV files
-├── src/                     # Java source code
-│   ├── exceptions/          # Custom exception classes
-│   ├── interfaces/          # Borrowable and fine strategy interfaces
+├── data/                    # Application CSV data
+├── src/
+│   ├── exceptions/          # Domain exceptions
+│   ├── interfaces/          # Borrowing and fine contracts
 │   ├── main/                # CLI entry point
-│   ├── models/              # Domain model classes
-│   ├── services/            # LibraryService and FileManager
-│   ├── tests/               # Custom full-system regression suite
-│   └── utils/               # Validation, search, and sort helpers
-├── .gitignore               # Ignore rules for generated files
-├── ARCHITECTURE.md          # Architecture notes
-├── CONTRIBUTING.md          # Contribution guidance
-├── LICENSE                  # MIT license
-├── README.md                # Project overview
-├── UML_Diagrams.md          # UML overview
-└── test_data/               # Generated test data directory
+│   ├── models/              # Domain objects
+│   ├── services/            # Business logic and CSV persistence
+│   ├── tests/               # Custom regression suite
+│   └── utils/               # Validation, search, and sorting
+└── test_data/               # Test fixtures and generated round-trip files
 ```
 
-## Prerequisites
+## Setup and run
 
-- Java JDK 8 or later
-- Command prompt or terminal
-
-## Build and run
-
-This project was verified with the current Windows PowerShell workflow:
-
-### Compile the project
+Prerequisite: JDK 8 or later. From the repository root in PowerShell:
 
 ```powershell
 javac -d bin -cp src @((Get-ChildItem -Path src -Recurse -Filter *.java | ForEach-Object { $_.FullName }))
-```
-
-### Run the test suite
-
-```powershell
-java -cp bin tests.LibrarySystemTestSuite
-```
-
-### Run the CLI application
-
-```powershell
 java -cp bin main.Main
 ```
 
-## Optional environment variable
-
-The CLI supports an optional environment variable for the data directory:
+The application uses `data` by default. Set `LIBRARY_DATA_DIR` to use another directory:
 
 ```powershell
 $env:LIBRARY_DATA_DIR = "data"
+java -cp bin main.Main
 ```
 
-If it is not set, the application falls back to the data folder in the project root.
+Missing CSV files are created automatically with sample data.
+
+## Example usage
+
+1. Open **Catalog and item tools** and search by author or filter for available books.
+2. Open **Users and borrowing history** to register or inspect a user.
+3. In **Transaction workflows**, issue an item with a date such as `2026-08-28`.
+4. Return it later; the service calculates the due date and any fine.
+5. Record a payment for the returned transaction, then review **Reports and maintenance**.
+6. Choose **Save and exit** to persist users, items, and transactions.
+
+## CSV persistence
+
+Items use `ItemID,Title,Author,Type,Availability`; users use `UserID,Name,Email,MaxBorrowLimit`. Transactions load the legacy seven-column layout and write optional payment fields as `TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine,PaidFine,PaymentDate`. ISO date rows are supported. Quoted commas and quotes are handled; malformed rows are skipped with warnings. Reservations are session-only and are not persisted.
 
 ## Testing
 
-The project uses a custom test runner, not JUnit:
-
-- [src/tests/LibrarySystemTestSuite.java](src/tests/LibrarySystemTestSuite.java)
-- It validates user creation, item operations, reservation behavior, undo behavior, CSV persistence, email validation, and regression cases.
-
-To run the suite:
+The repository uses a standard-library custom test runner rather than JUnit:
 
 ```powershell
+javac -d bin -cp src @((Get-ChildItem -Path src -Recurse -Filter *.java | ForEach-Object { $_.FullName }))
 java -cp bin tests.LibrarySystemTestSuite
 ```
 
-## Notes
+The suite covers management, search/filter/sort, `LocalDate` transactions, fines and payments, reservations, undo, reports, integrity checks, validation, and CSV round trips.
 
-- The data folder is initialized automatically if it does not exist.
-- The test_data folder is generated by tests and is ignored by Git.
-- The project does not include passwords, API keys, or external credentials.
-- Reservation state is intentionally not persisted and is cleared on a fresh service instance.
+## Limitations
 
-## Current limitations
+- The CLI is single-user and has no concurrency or locking model.
+- Reservation queues are in memory and reset when a new service instance starts.
+- CSV is lightweight and does not support multiline fields.
+- There is no authentication, user-role system, database, or GUI.
+- Legacy numeric transaction files are supported through an adapter; new CLI transactions use calendar dates.
 
-This project is intentionally small and course-scoped. Current limitations include:
+## Future improvements
 
-- day numbers are used instead of calendar dates
-- there is no multi-user locking or concurrency model
-- there is no database or external persistence layer
-- the CLI is single-user and menu-driven
-- reservation state is session-only by design
-
-## Potential future improvements
-
-These are conceptual improvements only and are not currently implemented in this repository:
-
-- real date handling with LocalDate
-- richer user roles or authentication
-- more advanced search/indexing
-- stronger persistence design for restart-safe reservations
+- Persist reservations with a versioned schema when restart-safe queues are required.
+- Add structured logging and richer report export.
+- Add authentication and user roles.
+- Introduce automated build tooling and a unit-test framework.
+- Add configurable loan periods, fine policies, and richer item metadata.
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
-## Authors
-
-- Muhammad Talha
-- Daver Abbas
-- Syed Muneeb
-
-

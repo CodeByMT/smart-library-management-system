@@ -4,16 +4,22 @@ import exceptions.ItemNotAvailableException;
 import exceptions.OverdueException;
 
 import models.Book;
+import models.EBook;
+import models.Journal;
 import models.LibraryItem;
 import models.Transaction;
 import models.User;
 import services.FileManager;
 import services.LibraryService;
+import utils.SortUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.PrintStream;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 
 public class LibrarySystemTestSuite {
@@ -23,6 +29,16 @@ public class LibrarySystemTestSuite {
         System.out.println("===== SMART LIBRARY SYSTEM TESTS =====");
 
         testAddItemAndSearch();
+        testCollectionAccessorsAreReadOnly();
+        testLocalDateTransactionLifecycle();
+        testLocalDateValidation();
+        testIsoTransactionCsvRoundTrip();
+        testBorrowingHistoryAndStateRebuild();
+        testFinePaymentTracking();
+        testReservationCancellation();
+        testIntegrityCheck();
+        testSearchAndFilterCapabilities();
+        testComparatorSortingOptions();
         testAddValidUser();
         testDuplicateUserIdRejected();
         testBlankUserIdRejected();
@@ -105,6 +121,266 @@ public class LibrarySystemTestSuite {
         if (!found) {
             System.out.println("FAIL - Item not found");
         }
+    }
+
+    public static void testCollectionAccessorsAreReadOnly() {
+        System.out.println("\nTest: Collection accessors are read-only");
+        LibraryService service = new LibraryService("test_data");
+        boolean protectedItems = false;
+        boolean protectedUsers = false;
+        boolean protectedBorrowedItems = false;
+
+        try {
+            service.getItems().clear();
+        } catch (UnsupportedOperationException e) {
+            protectedItems = true;
+        }
+
+        try {
+            service.getUsers().clear();
+        } catch (UnsupportedOperationException e) {
+            protectedUsers = true;
+        }
+
+        try {
+            User user = service.getUsers().get(0);
+            LibraryItem item = service.getItems().get(0);
+            user.borrowItem(item);
+            user.getBorrowedItems().clear();
+        } catch (UnsupportedOperationException e) {
+            protectedBorrowedItems = true;
+        }
+
+        if (protectedItems && protectedUsers && protectedBorrowedItems) {
+            System.out.println("PASS");
+        } else {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testLocalDateTransactionLifecycle() {
+        System.out.println("\nTest: LocalDate transaction lifecycle and overdue report");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("DATE_USER", "Date User");
+            service.addItemWithDetails("DATE_BOOK", "Date Book", "Author", "Book");
+            LocalDate issueDate = LocalDate.of(2026, 8, 1);
+            service.issueItem("DATE_USER", "DATE_BOOK", issueDate);
+
+            Transaction transaction = service.getTransactions().get(service.getTransactions().size() - 1);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            PrintStream originalOut = System.out;
+            System.setOut(new PrintStream(output));
+            try {
+                service.showReports(issueDate.plusDays(10));
+            } finally {
+                System.setOut(originalOut);
+            }
+
+            boolean reportShowsOverdue = output.toString().contains("Overdue items: 1");
+            boolean datesAreCorrect = transaction.getIssueDate().equals(issueDate)
+                    && transaction.getDueDate().equals(issueDate.plusDays(7));
+
+            try {
+                service.returnItem("DATE_USER", "DATE_BOOK", issueDate.plusDays(11));
+                System.out.println("FAIL");
+            } catch (OverdueException e) {
+                boolean fineIsCorrect = transaction.getReturnDate().equals(issueDate.plusDays(11))
+                        && transaction.getFine() == 100.0;
+                System.out.println(reportShowsOverdue && datesAreCorrect && fineIsCorrect ? "PASS" : "FAIL");
+            }
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testIsoTransactionCsvRoundTrip() {
+        System.out.println("\nTest: ISO transaction CSV round trip");
+        ArrayList<Transaction> transactions = new ArrayList<>();
+        transactions.add(new Transaction("ISO001", "U001", "B001",
+                LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 8),
+                LocalDate.of(2026, 8, 12), 100.0));
+
+        File file = new File("test_data/csv_transactions_iso.csv");
+        file.getParentFile().mkdirs();
+        FileManager.saveTransactions(file.getAbsolutePath(), transactions);
+        ArrayList<Transaction> loaded = FileManager.loadTransactions(file.getAbsolutePath());
+
+        if (loaded.size() == 1
+                && loaded.get(0).getIssueDate().equals(LocalDate.of(2026, 8, 1))
+                && loaded.get(0).getDueDate().equals(LocalDate.of(2026, 8, 8))
+                && loaded.get(0).getReturnDate().equals(LocalDate.of(2026, 8, 12))) {
+            System.out.println("PASS");
+        } else {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testBorrowingHistoryAndStateRebuild() {
+        System.out.println("\nTest: Borrowing history and active state rebuild");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("HISTORY_USER", "History User");
+            service.addItemWithDetails("HISTORY_BOOK", "History Book", "Author", "Book");
+            service.issueItem("HISTORY_USER", "HISTORY_BOOK", LocalDate.of(2026, 8, 1));
+
+            List<Transaction> userHistory = service.getBorrowingHistoryForUser("history_user");
+            List<Transaction> itemHistory = service.getBorrowingHistoryForItem("history_book");
+            User user = service.getUsers().stream()
+                    .filter(candidate -> candidate.getId().equals("HISTORY_USER"))
+                    .findFirst().get();
+
+            boolean readOnly;
+            try {
+                userHistory.clear();
+                readOnly = false;
+            } catch (UnsupportedOperationException e) {
+                readOnly = true;
+            }
+
+            System.out.println(userHistory.size() == 1 && itemHistory.size() == 1
+                    && user.getBorrowedItems().size() == 1 && readOnly ? "PASS" : "FAIL");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testFinePaymentTracking() {
+        System.out.println("\nTest: Fine payment tracking and persistence");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("PAYMENT_USER", "Payment User");
+            service.addItemWithDetails("PAYMENT_BOOK", "Payment Book", "Author", "Book");
+            LocalDate issueDate = LocalDate.of(2026, 8, 1);
+            service.issueItem("PAYMENT_USER", "PAYMENT_BOOK", issueDate);
+            try {
+                service.returnItem("PAYMENT_USER", "PAYMENT_BOOK", issueDate.plusDays(11));
+            } catch (OverdueException ignored) {
+            }
+            Transaction transaction = service.getBorrowingHistoryForUser("PAYMENT_USER").get(0);
+            service.recordFinePayment(transaction.getTransactionID(), 50.0, issueDate.plusDays(12));
+            boolean partialPayment = transaction.getPaidFine() == 50.0
+                    && transaction.getOutstandingFine() == 50.0;
+
+            File file = new File("test_data/csv_transactions_payment.csv");
+            FileManager.saveTransactions(file.getAbsolutePath(), new ArrayList<>(service.getTransactions()));
+            ArrayList<Transaction> loaded = FileManager.loadTransactions(file.getAbsolutePath());
+            boolean persisted = loaded.size() == service.getTransactions().size()
+                    && loaded.stream().anyMatch(saved -> saved.getTransactionID().equals(transaction.getTransactionID())
+                    && saved.getPaidFine() == 50.0
+                    && saved.getPaymentDate().equals(issueDate.plusDays(12)));
+            System.out.println(partialPayment && persisted ? "PASS" : "FAIL");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testReservationCancellation() {
+        System.out.println("\nTest: Reservation cancellation preserves FIFO order");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("QUEUE_USER_ONE", "Queue User One");
+            service.addUser("QUEUE_USER_TWO", "Queue User Two");
+            service.addItemWithDetails("QUEUE_BOOK", "Queue Book", "Author", "Book");
+            service.reserveItem("QUEUE_USER_ONE", "QUEUE_BOOK");
+            service.reserveItem("QUEUE_USER_TWO", "QUEUE_BOOK");
+            boolean cancelled = service.cancelReservation("queue_user_one", "queue_book");
+            List<String> queue = service.getReservationQueue("QUEUE_BOOK");
+            System.out.println(cancelled && queue.size() == 1
+                    && queue.get(0).equals("QUEUE_USER_TWO") ? "PASS" : "FAIL");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testIntegrityCheck() {
+        System.out.println("\nTest: Data integrity check");
+        try {
+            LibraryService service = new LibraryService("data");
+            List<String> issues = service.validateDataIntegrity();
+            System.out.println(issues.stream().anyMatch(issue -> issue.contains("J302")) ? "PASS" : "FAIL");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testLocalDateValidation() {
+        System.out.println("\nTest: LocalDate return validation");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("DATE_VALIDATION_USER", "Date Validation User");
+            service.addItemWithDetails("DATE_VALIDATION_BOOK", "Date Validation Book", "Author", "Book");
+            LocalDate issueDate = LocalDate.of(2026, 8, 20);
+            service.issueItem("DATE_VALIDATION_USER", "DATE_VALIDATION_BOOK", issueDate);
+            service.returnItem("DATE_VALIDATION_USER", "DATE_VALIDATION_BOOK", issueDate.minusDays(1));
+            System.out.println("FAIL");
+        } catch (IllegalArgumentException e) {
+            System.out.println("PASS");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testSearchAndFilterCapabilities() {
+        System.out.println("\nTest: Search and filter capabilities");
+        try {
+            LibraryService service = new LibraryService("test_data");
+            service.addUser("SEARCH_USER", "Search User");
+            service.addItemWithDetails("SEARCH_BOOK", "Algorithms in Practice", "Grace Hopper", "Book");
+            service.addItemWithDetails("SEARCH_EBOOK", "Java Patterns", "Grace Hopper", "EBook");
+            service.addItemWithDetails("SEARCH_JOURNAL", "Distributed Systems", "Alan Turing", "Journal");
+            service.issueItem("SEARCH_USER", "SEARCH_EBOOK", LocalDate.of(2026, 8, 1));
+
+            List<LibraryItem> authorMatches = service.searchItems("grace hopper");
+            List<LibraryItem> idMatches = service.searchItems("search_book");
+            List<LibraryItem> titleMatches = service.searchItems("distributed");
+            List<LibraryItem> availableBooks = service.filterItems("BOOK", true);
+            List<LibraryItem> unavailableDigital = service.filterItems(
+                    new HashSet<>(Arrays.asList("ebook", "journal")), false);
+
+                boolean matchesWork = authorMatches.size() == 2
+                    && idMatches.size() == 1
+                    && titleMatches.size() == 1
+                    && availableBooks.stream().anyMatch(item -> item.getItemID().equals("SEARCH_BOOK"))
+                    && unavailableDigital.size() == 1
+                    && unavailableDigital.get(0).getItemID().equals("SEARCH_EBOOK");
+
+            boolean resultIsReadOnly;
+            try {
+                availableBooks.clear();
+                resultIsReadOnly = false;
+            } catch (UnsupportedOperationException e) {
+                resultIsReadOnly = true;
+            }
+
+            System.out.println(matchesWork && resultIsReadOnly ? "PASS" : "FAIL");
+        } catch (Exception e) {
+            System.out.println("FAIL");
+        }
+    }
+
+    public static void testComparatorSortingOptions() {
+        System.out.println("\nTest: Comparator sorting options");
+        List<LibraryItem> items = new ArrayList<>();
+        LibraryItem zulu = new Book("SORT_Z", "Zulu", "Zed Author", true);
+        LibraryItem alpha = new Journal("SORT_A", "Alpha", "Ava Author", false);
+        LibraryItem middle = new EBook("SORT_M", "Middle", "Mia Author", true);
+        zulu.issueItem(null);
+        zulu.issueItem(null);
+        middle.issueItem(null);
+        middle.setAvailable(true);
+        items.add(zulu);
+        items.add(alpha);
+        items.add(middle);
+
+        SortUtil.sort(items, SortUtil.SortOption.AUTHOR);
+        boolean authorSorted = items.get(0) == alpha;
+        SortUtil.sort(items, SortUtil.SortOption.AVAILABILITY);
+        boolean availabilitySorted = items.get(0) == middle;
+        SortUtil.sort(items, SortUtil.SortOption.BORROW_COUNT);
+        boolean borrowCountSorted = items.get(0) == zulu;
+
+        System.out.println(authorSorted && availabilitySorted && borrowCountSorted ? "PASS" : "FAIL");
     }
 
     public static void testAddValidUser() {

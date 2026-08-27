@@ -15,6 +15,8 @@ import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -46,7 +48,7 @@ public class FileManager {
                     "U002,Nisha Patel,nisha@example.com,3"
             });
 
-            createFileWithSampleData(folderPath.resolve("transactions.csv"), "TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine", new String[]{});
+            createFileWithSampleData(folderPath.resolve("transactions.csv"), "TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine,PaidFine,PaymentDate", new String[]{});
         } catch (IOException e) {
             System.out.println("Could not initialize data files: " + e.getMessage());
         }
@@ -230,12 +232,31 @@ public class FileManager {
                     String transactionID = normalizeCsvField(data[0]);
                     String userID = normalizeCsvField(data[1]);
                     String itemID = normalizeCsvField(data[2]);
-                    int issueDay = Integer.parseInt(normalizeCsvField(data[3]));
-                    int dueDay = Integer.parseInt(normalizeCsvField(data[4]));
-                    int returnDay = Integer.parseInt(normalizeCsvField(data[5]));
+                    String issueValue = normalizeCsvField(data[3]);
+                    String dueValue = normalizeCsvField(data[4]);
+                    String returnValue = normalizeCsvField(data[5]);
                     double fine = Double.parseDouble(normalizeCsvField(data[6]));
-                    transactions.add(new Transaction(transactionID, userID, itemID, issueDay, dueDay, returnDay, fine));
-                } catch (NumberFormatException ex) {
+                    double paidFine = data.length > 7 && !normalizeCsvField(data[7]).isEmpty()
+                            ? Double.parseDouble(normalizeCsvField(data[7])) : 0.0;
+                    String paymentValue = data.length > 8 ? normalizeCsvField(data[8]) : "";
+                    boolean numericDates = isNumericDate(issueValue) && isNumericDate(dueValue)
+                            && (returnValue.isEmpty() || isNumericDate(returnValue));
+                    if (numericDates) {
+                        int issueDay = Integer.parseInt(issueValue);
+                        int dueDay = Integer.parseInt(dueValue);
+                        int returnDay = returnValue.isEmpty() ? 0 : Integer.parseInt(returnValue);
+                        LocalDate paymentDate = paymentValue.isEmpty() ? null : parseDateValue(paymentValue);
+                        transactions.add(new Transaction(transactionID, userID, itemID,
+                                issueDay, dueDay, returnDay, fine, paidFine, paymentDate));
+                    } else {
+                        LocalDate issueDate = LocalDate.parse(issueValue);
+                        LocalDate dueDate = LocalDate.parse(dueValue);
+                        LocalDate returnDate = returnValue.isEmpty() ? null : LocalDate.parse(returnValue);
+                        LocalDate paymentDate = paymentValue.isEmpty() ? null : LocalDate.parse(paymentValue);
+                        transactions.add(new Transaction(transactionID, userID, itemID,
+                                issueDate, dueDate, returnDate, fine, paidFine, paymentDate));
+                    }
+                } catch (NumberFormatException | DateTimeParseException ex) {
                     System.out.println("Warning: skipping malformed transaction row: " + line);
                 }
             }
@@ -245,7 +266,27 @@ public class FileManager {
         return transactions;
     }
 
-    public static void saveItems(String filePath, ArrayList<LibraryItem> items) {
+    private static boolean isNumericDate(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        try {
+            Integer.parseInt(value);
+            return true;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    private static LocalDate parseDateValue(String value) {
+        if (isNumericDate(value)) {
+            int day = Integer.parseInt(value);
+            return LocalDate.of(1970, 1, 1).plusDays(day - 1L);
+        }
+        return LocalDate.parse(value);
+    }
+
+    public static void saveItems(String filePath, List<LibraryItem> items) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
             writer.println("ItemID,Title,Author,Type,Availability");
             for (LibraryItem item : items) {
@@ -256,7 +297,7 @@ public class FileManager {
         }
     }
 
-    public static void saveUsers(String filePath, ArrayList<User> users) {
+    public static void saveUsers(String filePath, List<User> users) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
             writer.println("UserID,Name,Email,MaxBorrowLimit");
             for (User user : users) {
@@ -267,9 +308,9 @@ public class FileManager {
         }
     }
 
-    public static void saveTransactions(String filePath, ArrayList<Transaction> transactions) {
+    public static void saveTransactions(String filePath, List<Transaction> transactions) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
-            writer.println("TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine");
+            writer.println("TransactionID,UserID,ItemID,IssueDay,DueDay,ReturnDay,Fine,PaidFine,PaymentDate");
             for (Transaction transaction : transactions) {
                 writer.println(transaction.toCsv());
             }
