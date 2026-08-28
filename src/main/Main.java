@@ -31,7 +31,7 @@ public class Main {
         LibraryService libraryService = new LibraryService(dataDirectory);
         Scanner scanner = new Scanner(System.in);
         boolean running = true;
-        while (running && scanner.hasNextLine()) {
+        while (running) {
             printMenu();
             int choice = readValidMenuChoice(scanner);
 
@@ -126,7 +126,7 @@ public class Main {
     }
 
     private static void catalogMenu(Scanner scanner, LibraryService service) {
-        while (scanner.hasNextLine()) {
+        while (true) {
             printSection("CATALOG AND ITEM TOOLS");
             System.out.println("1. Add item");
             System.out.println("2. View all items");
@@ -161,7 +161,7 @@ public class Main {
     }
 
     private static void userMenu(Scanner scanner, LibraryService service) {
-        while (scanner.hasNextLine()) {
+        while (true) {
             printSection("USERS AND HISTORY");
             System.out.println("1. Add user");
             System.out.println("2. View users");
@@ -191,7 +191,7 @@ public class Main {
     }
 
     private static void borrowingMenu(Scanner scanner, LibraryService service) {
-        while (scanner.hasNextLine()) {
+        while (true) {
             printSection("TRANSACTION WORKFLOWS");
             System.out.println("1. Issue item");
             System.out.println("2. Return item");
@@ -233,7 +233,7 @@ public class Main {
     }
 
     private static void reportsMenu(Scanner scanner, LibraryService service) {
-        while (scanner.hasNextLine()) {
+        while (true) {
             printSection("REPORTS AND MAINTENANCE");
             System.out.println("1. Show library report");
             System.out.println("2. Check data integrity");
